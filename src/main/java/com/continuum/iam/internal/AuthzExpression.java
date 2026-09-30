@@ -1,6 +1,8 @@
 package com.continuum.iam.internal;
 
 import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.SegregationOfDutiesService;
+import com.continuum.iam.api.SodViolation;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,9 +24,11 @@ public class AuthzExpression {
     public static final String CLAIM_USER = "continuum_user_id";
 
     private final AuthorizationService authorization;
+    private final SegregationOfDutiesService sod;
 
-    public AuthzExpression(AuthorizationService authorization) {
+    public AuthzExpression(AuthorizationService authorization, SegregationOfDutiesService sod) {
         this.authorization = authorization;
+        this.sod = sod;
     }
 
     /** Droit sur une unité (§2.1.4). */
@@ -37,6 +41,22 @@ public class AuthzExpression {
     public boolean canOnMission(String featureCode, UUID missionId) {
         Jwt jwt = currentJwt();
         return authorization.canOnMission(tenantId(jwt), userId(jwt), featureCode, missionId);
+    }
+
+    /**
+     * Droit sur une unité <strong>et</strong> respect de la SoD dynamique sur l'objet visé (§2.1.4,
+     * point 4). Faux si {@code can} refuse ou si une règle SoD dynamique {@code BLOCK} s'applique
+     * (ex. l'auteur d'un constat qui tente de le valider).
+     */
+    public boolean canDo(String featureCode, UUID unitId, String objectType, String objectId) {
+        Jwt jwt = currentJwt();
+        UUID tenant = tenantId(jwt);
+        UUID user = userId(jwt);
+        if (!authorization.can(tenant, user, featureCode, unitId)) {
+            return false;
+        }
+        return sod.dynamicConflicts(tenant, user, featureCode, objectType, objectId).stream()
+                .noneMatch(v -> v.severity() == SodViolation.Severity.BLOCK);
     }
 
     private static Jwt currentJwt() {
