@@ -1,5 +1,6 @@
 package com.continuum.iam.api;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -57,4 +58,10 @@ public interface AuthorizationService {
      * stratégies de désignation des workflows (§2.1.5).
      */
     Set<UUID> whoCan(UUID tenantId, String featureCode, UUID unitId);
+
+    /**
+     * Toutes les fonctionnalités de l'utilisateur avec leurs portées (affectations + rôles de
+     * mission), sur toute l'entité — read model complet de {@code GET /me/permissions} (§2.1.7).
+     */
+    List<ScopedFeature> permissions(UUID tenantId, UUID userId);
 }

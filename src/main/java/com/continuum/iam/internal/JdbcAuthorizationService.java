@@ -1,7 +1,9 @@
 package com.continuum.iam.internal;
 
 import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.ScopedFeature;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -112,6 +114,29 @@ public class JdbcAuthorizationService implements AuthorizationService {
                                WHERE r.assignment_id = a.id AND r.feature_code = rf.feature_code))
             """;
 
+    private static final String PERMISSIONS_SQL = """
+            SELECT DISTINCT rf.feature_code AS code, p.scope AS scope_type, a.org_unit_id AS scope_id
+            FROM assignment a
+            JOIN position p          ON p.id = a.position_id AND p.active
+            JOIN position_role pr    ON pr.position_id = p.id
+            JOIN role_feature rf     ON rf.role_id = pr.role_id
+            JOIN platform.feature f  ON f.code = rf.feature_code AND NOT f.deprecated
+            JOIN platform.tenant_module tm
+                                     ON tm.tenant_id = a.tenant_id AND tm.module = f.module AND tm.enabled
+            WHERE a.tenant_id = :tenant AND a.user_id = :user
+              AND CURRENT_DATE >= a.valid_from AND (a.valid_to IS NULL OR CURRENT_DATE <= a.valid_to)
+            UNION
+            SELECT DISTINCT rf.feature_code AS code, 'MISSION' AS scope_type, mm.mission_id AS scope_id
+            FROM mission_member mm
+            JOIN role r              ON r.id = mm.role_id AND r.tenant_id = :tenant AND r.kind = 'MISSION'
+            JOIN role_feature rf     ON rf.role_id = r.id
+            JOIN platform.feature f  ON f.code = rf.feature_code AND NOT f.deprecated
+            JOIN platform.tenant_module tm
+                                     ON tm.tenant_id = :tenant AND tm.module = f.module AND tm.enabled
+            WHERE mm.user_id = :user
+              AND CURRENT_DATE >= mm.valid_from AND (mm.valid_to IS NULL OR CURRENT_DATE <= mm.valid_to)
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
 
     public JdbcAuthorizationService(DataSource dataSource) {
@@ -154,5 +179,16 @@ public class JdbcAuthorizationService implements AuthorizationService {
                 .addValue("feature", featureCode)
                 .addValue("unit", unitId);
         return new LinkedHashSet<>(jdbc.queryForList(WHO_CAN_SQL, params, UUID.class));
+    }
+
+    @Override
+    public List<ScopedFeature> permissions(UUID tenantId, UUID userId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", tenantId)
+                .addValue("user", userId);
+        return jdbc.query(PERMISSIONS_SQL, params, (rs, i) -> new ScopedFeature(
+                rs.getString("code"),
+                rs.getString("scope_type"),
+                rs.getObject("scope_id", UUID.class)));
     }
 }

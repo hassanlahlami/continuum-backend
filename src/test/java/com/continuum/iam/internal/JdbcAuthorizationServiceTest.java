@@ -1,8 +1,10 @@
 package com.continuum.iam.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.ScopedFeature;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,6 +38,7 @@ class JdbcAuthorizationServiceTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID USER = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
+    private static final UUID DIR_AUDIT = UUID.fromString("b0000000-0000-0000-0000-000000000002");
     private static final UUID DIV_FIN = UUID.fromString("b0000000-0000-0000-0000-000000000003");
     private static final UUID DIV_IT = UUID.fromString("b0000000-0000-0000-0000-000000000004");
     private static final UUID MISSION = UUID.fromString("f0000000-0000-0000-0000-000000000001");
@@ -113,6 +116,15 @@ class JdbcAuthorizationServiceTest {
     @Test
     void effectiveFeaturesEmptyOutsideSubtree() {
         assertThat(service().effectiveFeatures(TENANT, USER, DIV_IT)).isEmpty();
+    }
+
+    @Test
+    void permissionsListsUnitAndMissionScopes() {
+        assertThat(service().permissions(TENANT, USER))
+                .extracting(ScopedFeature::featureCode, ScopedFeature::scopeType, ScopedFeature::scopeId)
+                .contains(
+                        tuple("mission.order.approve", "UNIT_TREE", DIR_AUDIT),
+                        tuple("finding.write", "MISSION", MISSION));
     }
 
     @Test
