@@ -7,7 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.continuum.SecurityConfig;
 import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.SegregationOfDutiesService;
+import com.continuum.iam.api.SodViolation;
 import com.continuum.iam.internal.AuthzExpression;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * <p>Pas de Keycloak : le JWT est simulé ({@code spring-security-test}) ; {@link AuthorizationService}
  * est mocké — le moteur lui-même est testé sur base réelle par {@code JdbcAuthorizationServiceTest}.
  */
-@WebMvcTest(controllers = SecuredTestController.class)
+@WebMvcTest(controllers = {SecuredTestController.class, SecuredObjectController.class})
 @Import({SecurityConfig.class, AuthzExpression.class})
 class PreAuthorizeWiringTest {
 
@@ -39,6 +42,9 @@ class PreAuthorizeWiringTest {
 
     @MockitoBean
     private AuthorizationService authorization;
+
+    @MockitoBean
+    private SegregationOfDutiesService sod;
 
     @MockitoBean
     private JwtDecoder jwtDecoder; // requis par le resource server ; non invoqué (JWT simulé)
@@ -56,6 +62,27 @@ class PreAuthorizeWiringTest {
         given(authorization.can(TENANT, USER, "mission.order.approve", DENIED_UNIT)).willReturn(false);
 
         mvc.perform(get("/test/unit/{unitId}/approve", DENIED_UNIT).with(callerJwt()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void canDoAllowsWhenGrantedAndNoDynamicSodBlock() throws Exception {
+        given(authorization.can(TENANT, USER, "finding.validate", GRANTED_UNIT)).willReturn(true);
+        given(sod.dynamicConflicts(TENANT, USER, "finding.validate", "FINDING", "F-1"))
+                .willReturn(List.of());
+
+        mvc.perform(get("/test/unit/{u}/finding/{o}/validate", GRANTED_UNIT, "F-1").with(callerJwt()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void canDoDeniesWhenDynamicSodBlocks() throws Exception {
+        given(authorization.can(TENANT, USER, "finding.validate", GRANTED_UNIT)).willReturn(true);
+        given(sod.dynamicConflicts(TENANT, USER, "finding.validate", "FINDING", "F-1"))
+                .willReturn(List.of(new SodViolation("finding.write", "finding.validate",
+                        SodViolation.Severity.BLOCK)));
+
+        mvc.perform(get("/test/unit/{u}/finding/{o}/validate", GRANTED_UNIT, "F-1").with(callerJwt()))
                 .andExpect(status().isForbidden());
     }
 
