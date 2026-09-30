@@ -23,6 +23,10 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <spring-modulith.version>1.3.1</spring-modulith.version>
+    <!-- Base externe pour les tests d'intégration (fournie par -D ou un service CI). Vide = test neutralisé. -->
+    <it.db.url/>
+    <it.db.user/>
+    <it.db.password/>
   </properties>
 
   <dependencyManagement>
@@ -104,6 +108,7 @@
       <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 
   <build>
@@ -111,6 +116,17 @@
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <it.db.url>${it.db.url}</it.db.url>
+            <it.db.user>${it.db.user}</it.db.user>
+            <it.db.password>${it.db.password}</it.db.password>
+          </systemPropertyVariables>
+        </configuration>
       </plugin>
     </plugins>
   </build>
