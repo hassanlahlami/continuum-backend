@@ -27,6 +27,9 @@
     <it.db.url/>
     <it.db.user/>
     <it.db.password/>
+    <it.oracle.url/>
+    <it.oracle.user/>
+    <it.oracle.password/>
   </properties>
 
   <dependencyManagement>
@@ -158,6 +161,9 @@
             <it.db.url>${it.db.url}</it.db.url>
             <it.db.user>${it.db.user}</it.db.user>
             <it.db.password>${it.db.password}</it.db.password>
+            <it.oracle.url>${it.oracle.url}</it.oracle.url>
+            <it.oracle.user>${it.oracle.user}</it.oracle.user>
+            <it.oracle.password>${it.oracle.password}</it.oracle.password>
           </systemPropertyVariables>
         </configuration>
       </plugin>
