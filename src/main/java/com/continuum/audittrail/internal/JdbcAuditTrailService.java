@@ -1,8 +1,10 @@
 package com.continuum.audittrail.internal;
 
 import com.continuum.audittrail.api.AuditEntry;
+import com.continuum.audittrail.api.AuditRecord;
 import com.continuum.audittrail.api.AuditTrailService;
 import com.continuum.audittrail.api.AuditVerification;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -106,6 +108,24 @@ public class JdbcAuditTrailService implements AuditTrailService {
                 WHERE tenant_id = ? AND actor_user_id = ? AND action = ? AND object_type = ? AND object_id = ?
                 """, Long.class, tenantId, actorUserId, action, objectType, objectId);
         return count != null && count > 0;
+    }
+
+    @Override
+    public List<AuditRecord> export(UUID tenantId) {
+        return jdbc.query("""
+                SELECT seq, occurred_at, actor_user_id, action, object_type, object_id, payload, entry_hash
+                FROM audit_event WHERE tenant_id = ? ORDER BY seq
+                """,
+                (rs, i) -> new AuditRecord(
+                        rs.getLong("seq"),
+                        rs.getObject("occurred_at", OffsetDateTime.class).toInstant(),
+                        rs.getObject("actor_user_id", UUID.class),
+                        rs.getString("action"),
+                        rs.getString("object_type"),
+                        rs.getString("object_id"),
+                        rs.getString("payload"),
+                        rs.getString("entry_hash")),
+                tenantId);
     }
 
     private String hash(long seq, Instant occurredAt, UUID actor, String action, String objectType,
