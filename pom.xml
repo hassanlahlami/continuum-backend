@@ -131,7 +131,11 @@
             <id>generate-app-me</id>
             <goals><goal>generate</goal></goals>
             <configuration>
-              <inputSpec>../Instructions/contracts/openapi/app/me.yaml</inputSpec>
+              <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/app/me.yaml.
+                   Régénérer via `npx @redocly/cli bundle app/me.yaml -o …/src/main/openapi/me.bundled.yaml`.
+                   Le bundle évite le mauvais nommage des schémas partagés au cross-ref, et garde le
+                   build sans npx (air-gap, D26). -->
+              <inputSpec>src/main/openapi/me.bundled.yaml</inputSpec>
               <generatorName>spring</generatorName>
               <library>spring-boot</library>
               <apiPackage>gen.app.me.api</apiPackage>
