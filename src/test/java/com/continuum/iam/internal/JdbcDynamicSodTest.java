@@ -81,7 +81,8 @@ class JdbcDynamicSodTest {
     }
 
     private static JdbcSegregationOfDutiesService service() {
-        return new JdbcSegregationOfDutiesService(dataSource);
+        return new JdbcSegregationOfDutiesService(dataSource,
+                new JdbcAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test

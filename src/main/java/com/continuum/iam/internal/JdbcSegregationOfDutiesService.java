@@ -1,7 +1,9 @@
 package com.continuum.iam.internal;
 
+import com.continuum.audittrail.api.AuditTrailService;
 import com.continuum.iam.api.SegregationOfDutiesService;
 import com.continuum.iam.api.SodViolation;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -51,29 +53,21 @@ public class JdbcSegregationOfDutiesService implements SegregationOfDutiesServic
               AND s.feature_b IN (SELECT code FROM held)
             """;
 
-    // NOTE (frontière modules, §4.3.1) : la SoD dynamique lit l'historique d'actions via la table
-    // audit_event (module audittrail). À refactorer derrière l'API d'audittrail (hasActed) une fois
-    // les packages `api` exposés en named interfaces Spring Modulith et audittrail câblé en bean.
-    private static final String DYNAMIC_CONFLICTS_SQL = """
-            SELECT s.feature_a, s.feature_b, s.severity
-            FROM sod_rule s
-            WHERE s.tenant_id = :tenant
-              AND s.type = 'DYNAMIC'
-              AND :feature IN (s.feature_a, s.feature_b)
-              AND EXISTS (
-                SELECT 1 FROM audit_event e
-                WHERE e.tenant_id = :tenant
-                  AND e.actor_user_id = :user
-                  AND e.object_type = :objectType
-                  AND e.object_id = :objectId
-                  AND e.action = CASE WHEN s.feature_a = :feature THEN s.feature_b ELSE s.feature_a END
-              )
+    // SoD dynamique : on récupère les règles DYNAMIC portant sur la fonctionnalité tentée, puis on
+    // demande à l'API du module audittrail si l'utilisateur a déjà exercé la fonctionnalité en
+    // conflit sur le même objet (frontière de modules respectée, §4.3.1).
+    private static final String DYNAMIC_RULES_SQL = """
+            SELECT feature_a, feature_b, severity
+            FROM sod_rule
+            WHERE tenant_id = :tenant AND type = 'DYNAMIC' AND :feature IN (feature_a, feature_b)
             """;
 
     private final NamedParameterJdbcTemplate jdbc;
+    private final AuditTrailService auditTrail;
 
-    public JdbcSegregationOfDutiesService(DataSource dataSource) {
+    public JdbcSegregationOfDutiesService(DataSource dataSource, AuditTrailService auditTrail) {
         this.jdbc = new NamedParameterJdbcTemplate(dataSource);
+        this.auditTrail = auditTrail;
     }
 
     @Override
@@ -93,13 +87,19 @@ public class JdbcSegregationOfDutiesService implements SegregationOfDutiesServic
             UUID tenantId, UUID userId, String featureCode, String objectType, String objectId) {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenant", tenantId)
-                .addValue("user", userId)
-                .addValue("feature", featureCode)
-                .addValue("objectType", objectType)
-                .addValue("objectId", objectId);
-        return jdbc.query(DYNAMIC_CONFLICTS_SQL, params, (rs, i) -> new SodViolation(
+                .addValue("feature", featureCode);
+        List<SodViolation> dynamicRules = jdbc.query(DYNAMIC_RULES_SQL, params, (rs, i) -> new SodViolation(
                 rs.getString("feature_a"),
                 rs.getString("feature_b"),
                 SodViolation.Severity.valueOf(rs.getString("severity"))));
+
+        List<SodViolation> violations = new ArrayList<>();
+        for (SodViolation rule : dynamicRules) {
+            String conflicting = featureCode.equals(rule.featureA()) ? rule.featureB() : rule.featureA();
+            if (auditTrail.hasActed(tenantId, userId, conflicting, objectType, objectId)) {
+                violations.add(rule);
+            }
+        }
+        return violations;
     }
 }

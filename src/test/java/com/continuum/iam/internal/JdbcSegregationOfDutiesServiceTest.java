@@ -3,6 +3,7 @@ package com.continuum.iam.internal;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.continuum.audittrail.internal.JdbcAuditTrailService;
 import com.continuum.iam.api.SodViolation;
 import com.continuum.iam.api.SodViolation.Severity;
 import java.nio.charset.StandardCharsets;
@@ -71,7 +72,8 @@ class JdbcSegregationOfDutiesServiceTest {
     }
 
     private static JdbcSegregationOfDutiesService service() {
-        return new JdbcSegregationOfDutiesService(dataSource);
+        return new JdbcSegregationOfDutiesService(dataSource,
+                new JdbcAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
