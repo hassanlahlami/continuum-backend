@@ -1,0 +1,45 @@
+# Continuum backend — configuration technique par environnement (properties/env).
+# RAPPEL (CLAUDE.md) : aucune constante metier ici. Ce qui peut differer POUR UNE
+# RAISON METIER se parametre en base, par tenant, sans redeploiement.
+
+spring:
+  application:
+    name: continuum-backend
+
+  # Migrations executees par continuum-migrator, jamais au demarrage (D33, §4.3.5).
+  flyway:
+    enabled: false
+
+  # Placeholders — la source de donnees reelle est resolue par tenant (§4.7).
+  datasource:
+    url: ${CONTINUUM_DB_URL:jdbc:postgresql://localhost:5432/continuum}
+    username: ${CONTINUUM_DB_USER:continuum_app}
+    password: ${CONTINUUM_DB_PASSWORD:}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Keycloak — service d'authentification separe (§4.5).
+          issuer-uri: ${CONTINUUM_OIDC_ISSUER_URI:http://localhost:8080/realms/banque-demo}
+
+# Profil de deploiement : all | app | admin | worker (§4.3.2).
+continuum:
+  surface: ${CONTINUUM_SURFACE:all}
+
+# Logs JSON ECS, stdout uniquement (§10).
+logging:
+  structured:
+    format:
+      console: ecs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
