@@ -20,4 +20,16 @@ public interface SegregationOfDutiesService {
      *         {@link SodViolation.Severity#WARN} à signaler
      */
     List<SodViolation> staticConflicts(UUID tenantId, UUID userId, UUID unitId);
+
+    /**
+     * Règles SoD <strong>dynamiques</strong> violées si l'utilisateur exerce {@code featureCode} sur
+     * l'objet ({@code objectType}/{@code objectId}) alors qu'il a déjà réalisé la fonctionnalité en
+     * conflit sur ce <em>même objet</em> (§2.2 ; ex. l'auteur d'un constat ne peut pas le valider).
+     *
+     * <p>S'appuie sur l'historique d'actions ({@code audit_event}, §2.3).
+     *
+     * @return les conflits dynamiques applicables (vide si aucun) ; {@code BLOCK} interdit l'action
+     */
+    List<SodViolation> dynamicConflicts(
+            UUID tenantId, UUID userId, String featureCode, String objectType, String objectId);
 }

@@ -51,6 +51,25 @@ public class JdbcSegregationOfDutiesService implements SegregationOfDutiesServic
               AND s.feature_b IN (SELECT code FROM held)
             """;
 
+    // NOTE (frontière modules, §4.3.1) : la SoD dynamique lit l'historique d'actions via la table
+    // audit_event (module audittrail). À refactorer derrière l'API d'audittrail (hasActed) une fois
+    // les packages `api` exposés en named interfaces Spring Modulith et audittrail câblé en bean.
+    private static final String DYNAMIC_CONFLICTS_SQL = """
+            SELECT s.feature_a, s.feature_b, s.severity
+            FROM sod_rule s
+            WHERE s.tenant_id = :tenant
+              AND s.type = 'DYNAMIC'
+              AND :feature IN (s.feature_a, s.feature_b)
+              AND EXISTS (
+                SELECT 1 FROM audit_event e
+                WHERE e.tenant_id = :tenant
+                  AND e.actor_user_id = :user
+                  AND e.object_type = :objectType
+                  AND e.object_id = :objectId
+                  AND e.action = CASE WHEN s.feature_a = :feature THEN s.feature_b ELSE s.feature_a END
+              )
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
 
     public JdbcSegregationOfDutiesService(DataSource dataSource) {
@@ -64,6 +83,21 @@ public class JdbcSegregationOfDutiesService implements SegregationOfDutiesServic
                 .addValue("user", userId)
                 .addValue("unit", unitId);
         return jdbc.query(STATIC_CONFLICTS_SQL, params, (rs, i) -> new SodViolation(
+                rs.getString("feature_a"),
+                rs.getString("feature_b"),
+                SodViolation.Severity.valueOf(rs.getString("severity"))));
+    }
+
+    @Override
+    public List<SodViolation> dynamicConflicts(
+            UUID tenantId, UUID userId, String featureCode, String objectType, String objectId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", tenantId)
+                .addValue("user", userId)
+                .addValue("feature", featureCode)
+                .addValue("objectType", objectType)
+                .addValue("objectId", objectId);
+        return jdbc.query(DYNAMIC_CONFLICTS_SQL, params, (rs, i) -> new SodViolation(
                 rs.getString("feature_a"),
                 rs.getString("feature_b"),
                 SodViolation.Severity.valueOf(rs.getString("severity"))));
