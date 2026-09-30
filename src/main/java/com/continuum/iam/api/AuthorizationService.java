@@ -1,5 +1,6 @@
 package com.continuum.iam.api;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -39,4 +40,13 @@ public interface AuthorizationService {
      * @param missionId   mission de la ressource
      */
     boolean canOnMission(UUID tenantId, UUID userId, String featureCode, UUID missionId);
+
+    /**
+     * Ensemble des codes de fonctionnalités que l'utilisateur détient sur l'unité (via ses
+     * affectations, portées {@code TENANT}/{@code UNIT}/{@code UNIT_TREE}, §2.1.4).
+     *
+     * <p>Base du read model {@code GET /me/permissions} (§2.1.7) sur lequel le front construit menus,
+     * boutons et gardes. Ne couvre pas les rôles de mission (portée mission).
+     */
+    Set<String> effectiveFeatures(UUID tenantId, UUID userId, UUID unitId);
 }
