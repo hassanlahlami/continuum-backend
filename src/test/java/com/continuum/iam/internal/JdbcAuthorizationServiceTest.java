@@ -57,6 +57,12 @@ class JdbcAuthorizationServiceTest {
 
         dataSource = new DriverManagerDataSource(url, prop("it.db.user"), prop("it.db.password"));
 
+        // Base propre, indépendamment de l'ordre des classes de test (DB partagée).
+        org.springframework.jdbc.core.JdbcTemplate jt = new org.springframework.jdbc.core.JdbcTemplate(dataSource);
+        jt.execute("DROP SCHEMA IF EXISTS platform CASCADE");
+        jt.execute("DROP SCHEMA public CASCADE");
+        jt.execute("CREATE SCHEMA public");
+
         run(new FileSystemResource(migrator.resolve("V202609300900__platform_feature_catalog.sql")));
         run(new FileSystemResource(migrator.resolve("R__feature_catalog.sql")));
         run(new FileSystemResource(migrator.resolve("V202609301000__entity_iam_structure.sql")));
