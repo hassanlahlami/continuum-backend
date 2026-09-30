@@ -38,6 +38,8 @@ class JdbcAuthorizationServiceTest {
     private static final UUID USER = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
     private static final UUID DIV_FIN = UUID.fromString("b0000000-0000-0000-0000-000000000003");
     private static final UUID DIV_IT = UUID.fromString("b0000000-0000-0000-0000-000000000004");
+    private static final UUID MISSION = UUID.fromString("f0000000-0000-0000-0000-000000000001");
+    private static final UUID OTHER_MISSION = UUID.fromString("f0000000-0000-0000-0000-000000000002");
 
     private static DataSource dataSource;
 
@@ -94,5 +96,20 @@ class JdbcAuthorizationServiceTest {
     @Test
     void deniesFeatureNotGrantedByAnyRole() {
         assertThat(service().can(TENANT, USER, "finding.validate", DIV_FIN)).isFalse();
+    }
+
+    @Test
+    void grantsOnMission_viaMissionRole() {
+        assertThat(service().canOnMission(TENANT, USER, "finding.write", MISSION)).isTrue();
+    }
+
+    @Test
+    void deniesOnMissionWhereUserIsNotMember() {
+        assertThat(service().canOnMission(TENANT, USER, "finding.write", OTHER_MISSION)).isFalse();
+    }
+
+    @Test
+    void deniesMissionFeatureNotGrantedByMissionRole() {
+        assertThat(service().canOnMission(TENANT, USER, "mission.order.approve", MISSION)).isFalse();
     }
 }
