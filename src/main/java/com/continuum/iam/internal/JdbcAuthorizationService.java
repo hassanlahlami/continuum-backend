@@ -1,6 +1,8 @@
 package com.continuum.iam.internal;
 
 import com.continuum.iam.api.AuthorizationService;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -63,6 +65,30 @@ public class JdbcAuthorizationService implements AuthorizationService {
             )
             """;
 
+    private static final String EFFECTIVE_FEATURES_SQL = """
+            SELECT DISTINCT rf.feature_code
+            FROM assignment a
+            JOIN position p          ON p.id = a.position_id AND p.active
+            JOIN position_role pr    ON pr.position_id = p.id
+            JOIN role_feature rf     ON rf.role_id = pr.role_id
+            JOIN platform.feature f  ON f.code = rf.feature_code AND NOT f.deprecated
+            JOIN platform.tenant_module tm
+                                     ON tm.tenant_id = a.tenant_id AND tm.module = f.module AND tm.enabled
+            JOIN org_unit target     ON target.id = :unit
+            LEFT JOIN org_unit hu    ON hu.id = a.org_unit_id
+            WHERE a.tenant_id = :tenant
+              AND a.user_id   = :user
+              AND CURRENT_DATE >= a.valid_from
+              AND (a.valid_to IS NULL OR CURRENT_DATE <= a.valid_to)
+              AND (   p.scope = 'TENANT'
+                   OR (p.scope = 'UNIT'      AND hu.id = target.id)
+                   OR (p.scope = 'UNIT_TREE' AND target.path <@ hu.path))
+              AND (NOT EXISTS (SELECT 1 FROM assignment_feature_restriction r
+                               WHERE r.assignment_id = a.id)
+                   OR EXISTS  (SELECT 1 FROM assignment_feature_restriction r
+                               WHERE r.assignment_id = a.id AND r.feature_code = rf.feature_code))
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
 
     public JdbcAuthorizationService(DataSource dataSource) {
@@ -87,5 +113,14 @@ public class JdbcAuthorizationService implements AuthorizationService {
                 .addValue("feature", featureCode)
                 .addValue("mission", missionId);
         return Boolean.TRUE.equals(jdbc.queryForObject(CAN_ON_MISSION_SQL, params, Boolean.class));
+    }
+
+    @Override
+    public Set<String> effectiveFeatures(UUID tenantId, UUID userId, UUID unitId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", tenantId)
+                .addValue("user", userId)
+                .addValue("unit", unitId);
+        return new LinkedHashSet<>(jdbc.queryForList(EFFECTIVE_FEATURES_SQL, params, String.class));
     }
 }

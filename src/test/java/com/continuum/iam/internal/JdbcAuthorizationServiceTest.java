@@ -105,6 +105,17 @@ class JdbcAuthorizationServiceTest {
     }
 
     @Test
+    void effectiveFeaturesOnDescendantUnit() {
+        assertThat(service().effectiveFeatures(TENANT, USER, DIV_FIN))
+                .containsExactly("mission.order.approve");
+    }
+
+    @Test
+    void effectiveFeaturesEmptyOutsideSubtree() {
+        assertThat(service().effectiveFeatures(TENANT, USER, DIV_IT)).isEmpty();
+    }
+
+    @Test
     void grantsOnMission_viaMissionRole() {
         assertThat(service().canOnMission(TENANT, USER, "finding.write", MISSION)).isTrue();
     }
