@@ -29,3 +29,13 @@ INSERT INTO position_role(position_id, role_id) VALUES
 INSERT INTO assignment(id, tenant_id, user_id, position_id, org_unit_id, kind, valid_from) VALUES
  ('e0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000aa',
   'd0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000002', 'HOLDER', CURRENT_DATE);
+
+-- Portée mission (§2.1.1) : rôle de mission portant finding.write, membre sur MISSION1.
+INSERT INTO platform.tenant_module(tenant_id, module, enabled)
+VALUES ('00000000-0000-0000-0000-000000000001', 'FINDING', true);
+INSERT INTO role(id, tenant_id, code, label, kind) VALUES
+ ('c0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'CHEF_MISSION', '{"fr":"Chef de mission"}', 'MISSION');
+INSERT INTO role_feature(role_id, feature_code) VALUES
+ ('c0000000-0000-0000-0000-000000000002', 'finding.write');
+INSERT INTO mission_member(mission_id, user_id, role_id, valid_from) VALUES
+ ('f0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000aa', 'c0000000-0000-0000-0000-000000000002', CURRENT_DATE);

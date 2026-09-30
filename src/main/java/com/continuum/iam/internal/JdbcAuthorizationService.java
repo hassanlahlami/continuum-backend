@@ -47,6 +47,22 @@ public class JdbcAuthorizationService implements AuthorizationService {
             )
             """;
 
+    private static final String CAN_ON_MISSION_SQL = """
+            SELECT EXISTS (
+              SELECT 1
+              FROM mission_member mm
+              JOIN role r              ON r.id = mm.role_id AND r.tenant_id = :tenant AND r.kind = 'MISSION'
+              JOIN role_feature rf     ON rf.role_id = r.id AND rf.feature_code = :feature
+              JOIN platform.feature f  ON f.code = rf.feature_code AND NOT f.deprecated
+              JOIN platform.tenant_module tm
+                                       ON tm.tenant_id = :tenant AND tm.module = f.module AND tm.enabled
+              WHERE mm.user_id = :user
+                AND mm.mission_id = :mission
+                AND CURRENT_DATE >= mm.valid_from
+                AND (mm.valid_to IS NULL OR CURRENT_DATE <= mm.valid_to)
+            )
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
 
     public JdbcAuthorizationService(DataSource dataSource) {
@@ -61,5 +77,15 @@ public class JdbcAuthorizationService implements AuthorizationService {
                 .addValue("feature", featureCode)
                 .addValue("unit", unitId);
         return Boolean.TRUE.equals(jdbc.queryForObject(CAN_SQL, params, Boolean.class));
+    }
+
+    @Override
+    public boolean canOnMission(UUID tenantId, UUID userId, String featureCode, UUID missionId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", tenantId)
+                .addValue("user", userId)
+                .addValue("feature", featureCode)
+                .addValue("mission", missionId);
+        return Boolean.TRUE.equals(jdbc.queryForObject(CAN_ON_MISSION_SQL, params, Boolean.class));
     }
 }

@@ -25,4 +25,18 @@ public interface AuthorizationService {
      * @param unitId      unité organisationnelle de la ressource
      */
     boolean can(UUID tenantId, UUID userId, String featureCode, UUID unitId);
+
+    /**
+     * L'utilisateur détient-il {@code featureCode} sur la mission {@code missionId} via un
+     * <em>rôle de mission</em> (§2.1.1, second volet de la requête §2.1.6) ?
+     *
+     * <p>Complète {@link #can(UUID, UUID, String, UUID)} : les droits d'une ressource de mission sont
+     * l'union des droits d'unité (affectations) et des droits contextuels de la mission.
+     *
+     * @param tenantId    entité (tenant) courante
+     * @param userId      utilisateur évalué
+     * @param featureCode code de fonctionnalité
+     * @param missionId   mission de la ressource
+     */
+    boolean canOnMission(UUID tenantId, UUID userId, String featureCode, UUID missionId);
 }
