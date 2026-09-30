@@ -9,7 +9,6 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Service;
 
 /**
  * Implémentation PostgreSQL de {@link AuthorizationService} (plan §2.1.6, D4).
@@ -22,7 +21,10 @@ import org.springframework.stereotype.Service;
  * sans schéma : la connexion doit pointer sur le schéma de l'entité (§4.7). Le catalogue partagé est
  * qualifié {@code platform.*}.
  */
-@Service
+/**
+ * Implémentation PostgreSQL de {@link AuthorizationService} (§2.1.6, D4) — fournie comme bean par
+ * {@link AuthorizationConfig} selon le dialecte configuré.
+ */
 public class JdbcAuthorizationService implements AuthorizationService {
 
     private static final String CAN_SQL = """

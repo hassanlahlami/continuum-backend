@@ -31,6 +31,9 @@ spring:
 # Profil de deploiement : all | app | admin | worker (§4.3.2).
 continuum:
   surface: ${CONTINUUM_SURFACE:all}
+  db:
+    # Dialecte du moteur d'autorisation (D4) : postgresql | oracle.
+    dialect: ${CONTINUUM_DB_DIALECT:postgresql}
   audittrail:
     # Cle HMAC de signature du journal d'audit (§2.3) — a fournir via Vault (§4), jamais en dur.
     hmac-key: ${CONTINUUM_AUDITTRAIL_HMAC_KEY:}
