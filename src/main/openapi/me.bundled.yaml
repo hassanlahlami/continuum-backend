@@ -1,0 +1,1317 @@
+openapi: 3.1.0
+info:
+  title: Continuum — Utilisateur courant, notifications, recherche, tâches
+  version: 0.1.0
+  x-status: draft
+  description: |
+    Coquille applicative commune (pages COM-03 à COM-10) : identité, droits effectifs, préférences, sessions, activité, tableau de bord, notifications, recherche globale, boîte « Mes tâches », suivi des opérations longues.
+servers:
+  - url: /api/app
+security:
+  - bearer: []
+tags:
+  - name: me
+  - name: dashboard
+  - name: notifications
+  - name: search
+  - name: tasks
+  - name: jobs
+  - name: help
+paths:
+  /me:
+    get:
+      tags:
+        - me
+      operationId: getCurrentUser
+      summary: Identité, entité courante, entités accessibles et affectations actives
+      x-required-feature: authenticated
+      responses:
+        '200':
+          description: Utilisateur courant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/permissions:
+    get:
+      tags:
+        - me
+      operationId: getMyPermissions
+      summary: Fonctionnalités effectives de l'utilisateur, par portée (§2.1.4) — base de l'affichage des menus et boutons
+      x-required-feature: authenticated
+      responses:
+        '200':
+          description: Droits effectifs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Permissions'
+  /me/entity-selection:
+    post:
+      tags:
+        - me
+      operationId: selectEntity
+      summary: Choisir l'entité (filiale) de travail — page COM-03
+      x-required-feature: authenticated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - entityId
+              properties:
+                entityId:
+                  $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /me/preferences:
+    get:
+      tags:
+        - me
+      operationId: getMyPreferences
+      summary: Préférences d'affichage et de notification
+      x-required-feature: authenticated
+      responses:
+        '200':
+          description: Préférences.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferences'
+    put:
+      tags:
+        - me
+      operationId: updateMyPreferences
+      summary: Modifier ses préférences (dans les bornes du tenant, §1.6.1)
+      x-required-feature: authenticated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Preferences'
+      responses:
+        '200':
+          description: Préférences enregistrées.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preferences'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /me/sessions:
+    get:
+      tags:
+        - me
+      operationId: listMySessions
+      summary: Sessions actives de l'utilisateur
+      x-required-feature: authenticated
+      responses:
+        '200':
+          description: Sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+  /me/sessions/{sessionId}:
+    delete:
+      tags:
+        - me
+      operationId: revokeMySession
+      summary: Fermer une de ses sessions
+      x-required-feature: authenticated
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /me/activity:
+    get:
+      tags:
+        - me
+      operationId: listMyActivity
+      summary: « Mes actions » — extrait du journal d'audit concernant l'utilisateur
+      x-required-feature: authenticated
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: Activité paginée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivityPage'
+  /me/dashboard:
+    get:
+      tags:
+        - dashboard
+      operationId: getMyDashboard
+      summary: Mise en page du tableau de bord d'accueil (utilisateur → position → tenant, §1.6.6), widgets déjà filtrés par les droits
+      x-required-feature: authenticated
+      responses:
+        '200':
+          description: Tableau de bord.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+  /me/dashboard/layout:
+    put:
+      tags:
+        - dashboard
+      operationId: updateMyDashboardLayout
+      summary: Réorganiser son tableau de bord (dans les limites fixées)
+      x-required-feature: authenticated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardLayout'
+      responses:
+        '200':
+          description: Mise en page enregistrée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+    delete:
+      tags:
+        - dashboard
+      operationId: resetMyDashboardLayout
+      summary: Revenir à la mise en page de sa position
+      x-required-feature: authenticated
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+  /dashboard/widgets/{widgetCode}:
+    get:
+      tags:
+        - dashboard
+      operationId: getDashboardWidgetData
+      summary: Données d'un widget (le serveur applique la portée des droits)
+      x-required-feature: authenticated
+      parameters:
+        - name: widgetCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: my-open-tasks
+      responses:
+        '200':
+          description: Données du widget.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WidgetData'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /notifications:
+    get:
+      tags:
+        - notifications
+      operationId: listNotifications
+      summary: Centre de notifications (relances, validations à faire, anomalies CCM)
+      x-required-feature: authenticated
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Notifications paginées.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPage'
+  /notifications/unread-count:
+    get:
+      tags:
+        - notifications
+      operationId: countUnreadNotifications
+      summary: Nombre de notifications non lues (pastille de l'en-tête)
+      x-required-feature: authenticated
+      responses:
+        '200':
+          description: Compteur.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - count
+                properties:
+                  count:
+                    type: integer
+                    minimum: 0
+                    example: 3
+  /notifications/read:
+    post:
+      tags:
+        - notifications
+      operationId: markNotificationsRead
+      summary: Marquer des notifications comme lues (toutes si ids est vide)
+      x-required-feature: authenticated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Id'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+  /search:
+    get:
+      tags:
+        - search
+      operationId: globalSearch
+      summary: Recherche transverse (missions, constats, recommandations, entités auditables, rapports) limitée au périmètre de l'utilisateur
+      x-required-feature: authenticated
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 200
+        - name: types
+          in: query
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+              enum:
+                - MISSION
+                - FINDING
+                - RECOMMENDATION
+                - AUDITABLE_ENTITY
+                - REPORT
+                - EXTERNAL_FINDING
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Résultats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultPage'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /tasks:
+    get:
+      tags:
+        - tasks
+      operationId: listMyTasks
+      summary: Boîte « Mes tâches » (projection work_item, §6.2.6) — y compris les tâches de mes candidatures
+      x-required-feature: authenticated
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - OPEN
+              - CLAIMED
+              - DONE
+            default: OPEN
+        - name: objectType
+          in: query
+          schema:
+            type: string
+            enum:
+              - MISSION
+              - FINDING
+              - RECOMMENDATION
+              - AUDIT_PLAN
+              - CCM_EXCEPTION
+              - REPORT
+              - DOCUMENT_REQUEST
+        - name: overdueOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Tâches paginées.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskPage'
+  /tasks/{taskId}/claim:
+    post:
+      tags:
+        - tasks
+      operationId: claimTask
+      summary: Prendre une tâche proposée à plusieurs candidats
+      x-required-feature: authenticated
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Tâche prise en charge.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /tasks/{taskId}/complete:
+    post:
+      tags:
+        - tasks
+      operationId: completeTask
+      summary: Terminer une tâche (le serveur vérifie la fonctionnalité exigée par l'étape, la SoD et les gardes, §6.2.4)
+      x-required-feature: authenticated
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/TaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Tâche terminée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '202':
+          description: La tâche ouvre un circuit de signature.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureRequestRef'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /jobs/{jobId}:
+    get:
+      tags:
+        - jobs
+      operationId: getJob
+      summary: Suivre une opération longue (génération, import, export, exécution)
+      x-required-feature: authenticated
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: État du job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /help/topics:
+    get:
+      tags:
+        - help
+      operationId: listHelpTopics
+      summary: Rubriques d'aide et définitions normatives (FRAP, criticité, contradictoire…)
+      x-required-feature: authenticated
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - name: context
+          in: query
+          description: Identifiant de page (ex. FND-02) pour l'aide contextuelle.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rubriques.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HelpTopic'
+  /about:
+    get:
+      tags:
+        - help
+      operationId: getAbout
+      summary: Version, LTS, titulaire de licence, mentions
+      x-required-feature: authenticated
+      responses:
+        '200':
+          description: Informations de version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/About'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TaskId:
+      name: taskId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Page:
+      name: page
+      in: query
+      description: Numéro de page (commence à 0).
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      description: Taille de page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    From:
+      name: from
+      in: query
+      description: Date de début (incluse).
+      schema:
+        type: string
+        format: date
+    To:
+      name: to
+      in: query
+      description: Date de fin (incluse).
+      schema:
+        type: string
+        format: date
+    Sort:
+      name: sort
+      in: query
+      description: 'Tri : champ,asc|desc — répétable.'
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          example: updatedAt,desc
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Q:
+      name: q
+      in: query
+      description: Recherche libre.
+      schema:
+        type: string
+        maxLength: 200
+  schemas:
+    Me:
+      type: object
+      required:
+        - user
+        - entity
+        - assignments
+      properties:
+        user:
+          $ref: '#/components/schemas/UserSummary'
+        email:
+          type: string
+          format: email
+        entity:
+          $ref: '#/components/schemas/EntitySummary'
+        availableEntities:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntitySummary'
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignmentSummary'
+        lastLoginAt:
+          type: string
+          format: date-time
+        locale:
+          type: string
+          enum:
+            - fr
+            - ar
+            - en
+    EntitySummary:
+      type: object
+      required:
+        - id
+        - code
+        - label
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+          example: BANQUE-DEMO
+        label:
+          type: string
+          example: Banque Démo
+    AssignmentSummary:
+      type: object
+      required:
+        - positionLabel
+        - kind
+      properties:
+        positionLabel:
+          type: string
+          example: Chef de département Inspection
+        unit:
+          $ref: '#/components/schemas/UnitSummary'
+        kind:
+          type: string
+          enum:
+            - HOLDER
+            - INTERIM
+            - DELEGATION
+        validTo:
+          type: string
+          format: date
+    Permissions:
+      type: object
+      required:
+        - authzVersion
+        - features
+      properties:
+        authzVersion:
+          type: integer
+          description: Change à chaque modification d'habilitation (cache front à invalider)
+        features:
+          type: array
+          items:
+            type: object
+            required:
+              - code
+              - scopes
+            properties:
+              code:
+                type: string
+                example: mission.create
+              scopes:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - type
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                        - TENANT
+                        - UNIT
+                        - UNIT_TREE
+                        - MISSION
+                    id:
+                      $ref: '#/components/schemas/Id'
+                    label:
+                      type: string
+      example:
+        authzVersion: 12
+        features:
+          - code: mission.read
+            scopes:
+              - type: UNIT_TREE
+                id: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+                label: Inspection Générale
+          - code: finding.write
+            scopes:
+              - type: MISSION
+                id: 9b2d7e4a-1c3f-4a6b-8d5e-7f0a1b2c3d4e
+                label: Inspection agence A001
+    Preferences:
+      type: object
+      properties:
+        locale:
+          type: string
+          enum:
+            - fr
+            - ar
+            - en
+        colorMode:
+          type: string
+          enum:
+            - light
+            - dark
+            - auto
+          default: auto
+        fontScale:
+          type: number
+          minimum: 0.85
+          maximum: 1.5
+          default: 1
+        density:
+          type: integer
+          minimum: -2
+          maximum: 0
+        highContrast:
+          type: boolean
+          default: false
+        notificationChannels:
+          type: object
+          description: Canal par type de notification.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+              enum:
+                - IN_APP
+                - EMAIL
+    Session:
+      type: object
+      required:
+        - id
+        - startedAt
+        - current
+      properties:
+        id:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        lastAccessAt:
+          type: string
+          format: date-time
+        ipAddress:
+          type: string
+        userAgent:
+          type: string
+        client:
+          type: string
+          enum:
+            - continuum-app
+            - continuum-admin
+        current:
+          type: boolean
+    ActivityPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                required:
+                  - at
+                  - action
+                properties:
+                  at:
+                    type: string
+                    format: date-time
+                  action:
+                    $ref: '#/components/schemas/Ref'
+                  objectType:
+                    type: string
+                  objectId:
+                    $ref: '#/components/schemas/Id'
+                  objectLabel:
+                    type: string
+    Dashboard:
+      type: object
+      required:
+        - source
+        - widgets
+      properties:
+        source:
+          type: string
+          enum:
+            - USER
+            - POSITION
+            - TENANT
+            - PLATFORM
+          description: Niveau d'où provient la mise en page
+        widgets:
+          type: array
+          items:
+            $ref: '#/components/schemas/WidgetPlacement'
+    DashboardLayout:
+      type: object
+      required:
+        - widgets
+      properties:
+        widgets:
+          type: array
+          items:
+            $ref: '#/components/schemas/WidgetPlacement'
+    WidgetPlacement:
+      type: object
+      required:
+        - widgetCode
+        - column
+        - row
+        - width
+        - height
+      properties:
+        widgetCode:
+          type: string
+          example: my-open-tasks
+        title:
+          type: string
+        column:
+          type: integer
+          minimum: 0
+        row:
+          type: integer
+          minimum: 0
+        width:
+          type: integer
+          minimum: 1
+          maximum: 12
+        height:
+          type: integer
+          minimum: 1
+          maximum: 6
+    WidgetData:
+      type: object
+      required:
+        - widgetCode
+        - kind
+      properties:
+        widgetCode:
+          type: string
+        kind:
+          type: string
+          enum:
+            - KPI
+            - LIST
+            - CHART
+            - HEATMAP
+        kpi:
+          type: object
+          properties:
+            value:
+              type: number
+            unit:
+              type: string
+            trend:
+              type: number
+              description: Variation sur la période précédente
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              points:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    x:
+                      type: string
+                    'y':
+                      type: number
+        drillDownRoute:
+          type: string
+          description: Route de la liste filtrée correspondante
+          example: /tasks?overdueOnly=true
+    NotificationPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Notification'
+    Notification:
+      type: object
+      required:
+        - id
+        - type
+        - title
+        - createdAt
+        - read
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        type:
+          type: string
+          enum:
+            - TASK_ASSIGNED
+            - DEADLINE_REMINDER
+            - SIGNATURE_REQUESTED
+            - CCM_EXCEPTION
+            - CONTRADICTORY_RESPONSE
+            - SYSTEM
+        title:
+          type: string
+          example: Constat à valider — Inspection agence A001
+        body:
+          type: string
+        route:
+          type: string
+          example: /missions/9b2d7e4a-1c3f-4a6b-8d5e-7f0a1b2c3d4e/findings
+        createdAt:
+          type: string
+          format: date-time
+        read:
+          type: boolean
+    SearchResultPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                required:
+                  - type
+                  - id
+                  - title
+                  - route
+                properties:
+                  type:
+                    type: string
+                  id:
+                    $ref: '#/components/schemas/Id'
+                  title:
+                    type: string
+                  excerpt:
+                    type: string
+                  status:
+                    $ref: '#/components/schemas/Ref'
+                  route:
+                    type: string
+    Task:
+      type: object
+      required:
+        - id
+        - title
+        - objectType
+        - objectId
+        - status
+        - route
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+          example: Approuver le rapport définitif
+        objectType:
+          type: string
+        objectId:
+          $ref: '#/components/schemas/Id'
+        objectLabel:
+          type: string
+          example: Inspection agence A001
+        status:
+          type: string
+          enum:
+            - OPEN
+            - CLAIMED
+            - DONE
+            - CANCELLED
+        assignee:
+          $ref: '#/components/schemas/UserSummary'
+        candidateCount:
+          type: integer
+          description: Nombre de candidats si la tâche n'est pas encore prise
+        dueAt:
+          type: string
+          format: date-time
+        overdue:
+          type: boolean
+        route:
+          type: string
+          description: Page où traiter la tâche
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+    TaskPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Task'
+    HelpTopic:
+      type: object
+      required:
+        - code
+        - title
+      properties:
+        code:
+          type: string
+          example: frap
+        title:
+          type: string
+          example: FRAP — Feuille de Révélation et d'Analyse de Problème
+        body:
+          type: string
+          description: Contenu en Markdown
+        normativeReference:
+          type: string
+          example: GIAS Standard 14.3
+    About:
+      type: object
+      required:
+        - productVersion
+      properties:
+        productVersion:
+          type: string
+          example: 1.0.0
+        ltsUntil:
+          type: string
+          format: date
+        licensee:
+          type: string
+          example: Banque Démo
+        buildDate:
+          type: string
+          format: date-time
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+    UserSummary:
+      type: object
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+          example: Inspecteur Un
+        positionLabel:
+          type: string
+          description: Position principale courante (libellé du tenant)
+          example: Inspecteur
+        unitLabel:
+          type: string
+          example: Département Inspection du Réseau
+    UnitSummary:
+      type: object
+      required:
+        - id
+        - label
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+          example: DIR-RESEAU
+        label:
+          type: string
+          example: Direction du Réseau
+        typeLabel:
+          type: string
+          example: Direction
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required:
+        - page
+        - size
+        - totalItems
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          example: 25
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 42
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 2
+    Ref:
+      type: object
+      description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: HIGH
+        label:
+          type: string
+          description: Libellé dans la langue de l'utilisateur
+          example: Élevée
+        color:
+          type: string
+          description: Token de couleur sémantique (§1.6), jamais une couleur en dur
+          example: criticality-high
+    AvailableAction:
+      type: object
+      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: submit-for-review
+        label:
+          type: string
+          example: Soumettre à la revue
+        style:
+          type: string
+          enum:
+            - primary
+            - secondary
+            - danger
+          default: secondary
+        requiresComment:
+          type: boolean
+          default: false
+        requiresSignature:
+          type: boolean
+          default: false
+        requiresStepUp:
+          type: boolean
+          default: false
+          description: Authentification renforcée (acr=2) exigée
+        confirmationMessage:
+          type: string
+          description: Message de confirmation à afficher avant exécution
+    ActionRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 4000
+        payload:
+          type: object
+          additionalProperties: true
+          description: Données propres à l'action (ex. motif de refus, destinataires).
+    SignatureRequestRef:
+      type: object
+      description: Renvoyé en 202 quand une action ouvre un circuit de signature (§2.4).
+      required:
+        - signatureRequestId
+        - status
+      properties:
+        signatureRequestId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum:
+            - PENDING
+            - COMPLETED
+            - REFUSED
+            - INVALIDATED
+            - EXPIRED
+        nextSigners:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+    Job:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        type:
+          type: string
+          example: REPORT_GENERATION
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+            - CANCELLED
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        resultUrl:
+          type: string
+          description: Lien vers le résultat quand status = SUCCEEDED
+        problem:
+          $ref: '#/components/schemas/Problem'
+  responses:
+    Unauthorized:
+      description: Jeton absent, expiré ou invalide.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NoContent:
+      description: Opération réussie, sans contenu.
+    Forbidden:
+      description: Fonctionnalité non détenue sur cette portée, ou refus de séparation des tâches (code CTN-IAM-0210).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/sod-violation
+            title: Séparation des tâches
+            status: 403
+            detail: Vous avez rédigé ce constat ; sa validation doit être faite par une autre personne.
+            code: CTN-IAM-0210
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+            sodRule: NOT_CREATOR
+    ValidationFailed:
+      description: Données invalides — détail par champ dans errors[].
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/validation
+            title: Données invalides
+            status: 422
+            code: CTN-AUD-0422
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+            errors:
+              - field: plannedEnd
+                code: date.before-start
+                message: La date de fin doit être postérieure à la date de début.
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflit de version (l'objet a changé) ou état incompatible avec l'action.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
