@@ -17,4 +17,10 @@ public interface AuditTrailService {
      * Recalcule la chaîne et les signatures du tenant pour détecter une altération.
      */
     AuditVerification verify(UUID tenantId);
+
+    /**
+     * L'utilisateur a-t-il déjà réalisé {@code action} sur cet objet ? Utilisé notamment par la SoD
+     * dynamique (§2.2) pour interdire une action en conflit sur le même objet.
+     */
+    boolean hasActed(UUID tenantId, UUID actorUserId, String action, String objectType, String objectId);
 }

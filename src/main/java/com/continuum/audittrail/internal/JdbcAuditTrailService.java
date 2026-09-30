@@ -99,6 +99,15 @@ public class JdbcAuditTrailService implements AuditTrailService {
         return new AuditVerification(true, null, rows.size());
     }
 
+    @Override
+    public boolean hasActed(UUID tenantId, UUID actorUserId, String action, String objectType, String objectId) {
+        Long count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM audit_event
+                WHERE tenant_id = ? AND actor_user_id = ? AND action = ? AND object_type = ? AND object_id = ?
+                """, Long.class, tenantId, actorUserId, action, objectType, objectId);
+        return count != null && count > 0;
+    }
+
     private String hash(long seq, Instant occurredAt, UUID actor, String action, String objectType,
             String objectId, String payload, String prevHash) {
         String canonical = String.join(SEP,
