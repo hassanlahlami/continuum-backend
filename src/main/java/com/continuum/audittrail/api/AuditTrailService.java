@@ -1,5 +1,6 @@
 package com.continuum.audittrail.api;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -23,4 +24,10 @@ public interface AuditTrailService {
      * dynamique (§2.2) pour interdire une action en conflit sur le même objet.
      */
     boolean hasActed(UUID tenantId, UUID actorUserId, String action, String objectType, String objectId);
+
+    /**
+     * Exporte le journal du tenant, ordonné par {@code seq} (remise aux auditeurs externes, §2.3).
+     * Se vérifie avec {@link #verify(UUID)}.
+     */
+    List<AuditRecord> export(UUID tenantId);
 }

@@ -3,7 +3,9 @@ package com.continuum.audittrail.internal;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.continuum.audittrail.api.AuditEntry;
+import com.continuum.audittrail.api.AuditRecord;
 import com.continuum.audittrail.api.AuditVerification;
+import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -71,6 +73,17 @@ class JdbcAuditTrailServiceTest {
         } catch (SQLException e) {
             throw new IllegalStateException("Échec d'application du script " + script, e);
         }
+    }
+
+    @Test
+    @Order(0)
+    void exportReturnsAllEntriesInOrder() {
+        List<AuditRecord> export = new JdbcAuditTrailService(dataSource, KEY).export(TENANT);
+        assertThat(export).extracting(AuditRecord::seq, AuditRecord::action)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1L, "finding.write"),
+                        org.assertj.core.groups.Tuple.tuple(2L, "finding.review"),
+                        org.assertj.core.groups.Tuple.tuple(3L, "finding.validate"));
     }
 
     @Test
