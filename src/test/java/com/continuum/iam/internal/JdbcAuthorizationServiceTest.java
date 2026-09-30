@@ -116,6 +116,17 @@ class JdbcAuthorizationServiceTest {
     }
 
     @Test
+    void whoCanReturnsHoldersOnDescendantUnit() {
+        assertThat(service().whoCan(TENANT, "mission.order.approve", DIV_FIN)).containsExactly(USER);
+    }
+
+    @Test
+    void whoCanEmptyOutsideSubtreeOrUngrantedFeature() {
+        assertThat(service().whoCan(TENANT, "mission.order.approve", DIV_IT)).isEmpty();
+        assertThat(service().whoCan(TENANT, "finding.validate", DIV_FIN)).isEmpty();
+    }
+
+    @Test
     void grantsOnMission_viaMissionRole() {
         assertThat(service().canOnMission(TENANT, USER, "finding.write", MISSION)).isTrue();
     }

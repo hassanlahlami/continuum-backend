@@ -49,4 +49,12 @@ public interface AuthorizationService {
      * boutons et gardes. Ne couvre pas les rôles de mission (portée mission).
      */
     Set<String> effectiveFeatures(UUID tenantId, UUID userId, UUID unitId);
+
+    /**
+     * Utilisateurs détenant {@code featureCode} sur l'unité (via leurs affectations, §2.1.4).
+     *
+     * <p>Base du simulateur d'habilitations (« qui peut approuver ceci ? », §1.4/ADM-12) et des
+     * stratégies de désignation des workflows (§2.1.5).
+     */
+    Set<UUID> whoCan(UUID tenantId, String featureCode, UUID unitId);
 }
