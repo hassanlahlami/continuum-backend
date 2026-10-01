@@ -74,7 +74,8 @@ class JdbcAssignmentServiceTest {
 
     private static AssignmentService service() {
         AuditTrailService audit = new JdbcAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8));
-        return new JdbcAssignmentService(dataSource, audit);
+        return new JdbcAssignmentService(dataSource, audit,
+                new JdbcSegregationOfDutiesService(dataSource, audit));
     }
 
     @Test
