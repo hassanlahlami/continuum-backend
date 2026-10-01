@@ -4,16 +4,12 @@ import com.continuum.audittrail.api.AuditEntry;
 import com.continuum.audittrail.api.AuditRecord;
 import com.continuum.audittrail.api.AuditTrailService;
 import com.continuum.audittrail.api.AuditVerification;
-import java.util.List;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -31,10 +27,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * (verrou/transaction à ajouter côté service applicatif ; hors périmètre de cette brique).
  */
 public class JdbcAuditTrailService implements AuditTrailService {
-
-    /** Séparateur d'unités (US 0x1F, non ambigu) entre champs du message signé. */
-    private static final String SEP = String.valueOf((char) 0x1F);
-    private static final String HMAC_ALGO = "HmacSHA256";
 
     private final JdbcTemplate jdbc;
     private final byte[] hmacKey;
@@ -54,7 +46,7 @@ public class JdbcAuditTrailService implements AuditTrailService {
                 String.class, entry.tenantId(), seq - 1);
 
         Instant occurredAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        String entryHash = hash(seq, occurredAt, entry.actorUserId(), entry.action(),
+        String entryHash = AuditHmac.hash(hmacKey, seq, occurredAt, entry.actorUserId(), entry.action(),
                 entry.objectType(), entry.objectId(), entry.payload(), prevHash);
 
         jdbc.update("""
@@ -90,8 +82,8 @@ public class JdbcAuditTrailService implements AuditTrailService {
 
         String runningPrev = null;
         for (Row r : rows) {
-            String expected = hash(r.seq, r.occurredAt, r.actor, r.action, r.objectType, r.objectId,
-                    r.payload, runningPrev);
+            String expected = AuditHmac.hash(hmacKey, r.seq, r.occurredAt, r.actor, r.action,
+                    r.objectType, r.objectId, r.payload, runningPrev);
             boolean prevMatches = runningPrev == null ? r.prevHash == null : runningPrev.equals(r.prevHash);
             if (!prevMatches || !expected.equals(r.entryHash)) {
                 return new AuditVerification(false, r.seq, rows.size());
@@ -126,42 +118,6 @@ public class JdbcAuditTrailService implements AuditTrailService {
                         rs.getString("payload"),
                         rs.getString("entry_hash")),
                 tenantId);
-    }
-
-    private String hash(long seq, Instant occurredAt, UUID actor, String action, String objectType,
-            String objectId, String payload, String prevHash) {
-        String canonical = String.join(SEP,
-                Long.toString(seq),
-                Long.toString(micros(occurredAt)),
-                nullToEmpty(actor == null ? null : actor.toString()),
-                nullToEmpty(action),
-                nullToEmpty(objectType),
-                nullToEmpty(objectId),
-                nullToEmpty(payload),
-                nullToEmpty(prevHash));
-        try {
-            Mac mac = Mac.getInstance(HMAC_ALGO);
-            mac.init(new SecretKeySpec(hmacKey, HMAC_ALGO));
-            return toHex(mac.doFinal(canonical.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception e) {
-            throw new IllegalStateException("Calcul HMAC impossible", e);
-        }
-    }
-
-    private static long micros(Instant instant) {
-        return instant.getEpochSecond() * 1_000_000L + instant.getNano() / 1_000L;
-    }
-
-    private static String nullToEmpty(String s) {
-        return s == null ? "" : s;
-    }
-
-    private static String toHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-        }
-        return sb.toString();
     }
 
     private record Row(long seq, Instant occurredAt, UUID actor, String action, String objectType,

@@ -10,7 +10,8 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Câblage du journal d'audit (plan §2.3, §4). La clé HMAC vient de l'environnement
  * ({@code continuum.audittrail.hmac-key}, à alimenter depuis Vault en production, §4) — jamais en
- * dur dans le code.
+ * dur dans le code. L'implémentation est choisie selon le dialecte de base (D4) :
+ * {@code continuum.db.dialect} = {@code postgresql} (défaut) ou {@code oracle}.
  */
 @Configuration
 class AuditTrailConfig {
@@ -18,12 +19,19 @@ class AuditTrailConfig {
     @Bean
     AuditTrailService auditTrailService(
             DataSource dataSource,
-            @Value("${continuum.audittrail.hmac-key:}") String hmacKey) {
+            @Value("${continuum.audittrail.hmac-key:}") String hmacKey,
+            @Value("${continuum.db.dialect:postgresql}") String dialect) {
         if (hmacKey == null || hmacKey.isBlank()) {
             throw new IllegalStateException(
                     "continuum.audittrail.hmac-key manquante : fournir une clé HMAC (Vault, §4) "
                             + "pour signer le journal d'audit.");
         }
-        return new JdbcAuditTrailService(dataSource, hmacKey.getBytes(StandardCharsets.UTF_8));
+        return forDialect(dataSource, hmacKey.getBytes(StandardCharsets.UTF_8), dialect);
+    }
+
+    static AuditTrailService forDialect(DataSource dataSource, byte[] hmacKey, String dialect) {
+        return "oracle".equalsIgnoreCase(dialect)
+                ? new OracleAuditTrailService(dataSource, hmacKey)
+                : new JdbcAuditTrailService(dataSource, hmacKey);
     }
 }
