@@ -1,0 +1,2105 @@
+openapi: 3.1.0
+info:
+  title: Continuum — Admin Système — entités, utilisateurs, organigramme, habilitations
+  version: 0.1.0
+  x-status: draft
+  description: |
+    Pages ADM-01 à ADM-14 (§2.1, §4.4.2). API exposée sous /api/admin : jeton émis pour l'audience continuum-admin, niveau d'authentification acr ≥ 2, accès réseau d'administration uniquement (§4.3.3). Les modifications sensibles (fonctionnalités sensitive, affectations) passent en double validation ; l'auto-octroi est interdit (§2.1.8).
+servers:
+  - url: /api/admin
+security:
+  - bearer: []
+tags:
+  - name: overview
+  - name: entities
+  - name: users
+  - name: org
+  - name: positions
+  - name: roles
+  - name: assignments
+  - name: sod
+  - name: authz-simulation
+  - name: recertification
+  - name: change-requests
+paths:
+  /overview:
+    get:
+      tags:
+        - overview
+      operationId: getAdminOverview
+      summary: Accueil Admin Système (santé, alertes, demandes en attente, synchronisation annuaire)
+      x-required-feature: admin.overview.read
+      responses:
+        '200':
+          description: Vue d'ensemble.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOverview'
+  /entities:
+    get:
+      tags:
+        - entities
+      operationId: listEntities
+      summary: Entités (tenants) de l'installation — filiales du groupe (D5)
+      x-required-feature: admin.entity.read
+      responses:
+        '200':
+          description: Entités.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Entity'
+    post:
+      tags:
+        - entities
+      operationId: createEntity
+      summary: Créer une entité (schéma/PDB, realm Keycloak, pack de conformité initial)
+      x-required-feature: admin.entity.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntityInput'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /entities/{entityId}:
+    parameters:
+      - $ref: '#/components/parameters/EntityId'
+    get:
+      tags:
+        - entities
+      operationId: getEntity
+      summary: Fiche d'une entité (modules, langues, quotas, statut, pack installé)
+      x-required-feature: admin.entity.read
+      responses:
+        '200':
+          description: Entité.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - entities
+      operationId: updateEntity
+      summary: Modifier une entité (modules activés, langues, quotas)
+      x-required-feature: admin.entity.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntityInput'
+      responses:
+        '200':
+          description: Entité à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entity'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /entities/{entityId}/actions/{actionCode}:
+    post:
+      tags:
+        - entities
+      operationId: performEntityAction
+      summary: Suspendre, réactiver, passer en maintenance
+      x-required-feature: admin.entity.manage
+      parameters:
+        - $ref: '#/components/parameters/EntityId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Entité à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entity'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users:
+    get:
+      tags:
+        - users
+      operationId: listUsers
+      summary: Utilisateurs (fédérés AD ou locaux), statut, affectations
+      x-required-feature: admin.user.read
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/UnitId'
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum:
+              - AD
+              - LOCAL
+        - name: accountStatus
+          in: query
+          schema:
+            type: string
+            enum:
+              - ACTIVE
+              - LOCKED
+              - DISABLED
+              - NO_ASSIGNMENT
+        - name: positionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: Utilisateurs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+    post:
+      tags:
+        - users
+      operationId: createLocalUser
+      summary: Créer un compte local (quand l'annuaire ne peut pas être utilisé, ex. audité externe)
+      x-required-feature: admin.user.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - firstName
+                - lastName
+                - email
+              properties:
+                username:
+                  type: string
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                email:
+                  type: string
+                  format: email
+      responses:
+        '201':
+          description: 'Compte créé (action requise : définir le mot de passe et la MFA).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccount'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /users/{userId}:
+    get:
+      tags:
+        - users
+      operationId: getUser
+      summary: Fiche utilisateur (identité, source, affectations, droits effectifs, sessions, derniers accès)
+      x-required-feature: admin.user.read
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Utilisateur.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccount'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /users/{userId}/actions/{actionCode}:
+    post:
+      tags:
+        - users
+      operationId: performUserAction
+      summary: Verrouiller, déverrouiller, réinitialiser la MFA, désactiver, fermer toutes les sessions
+      x-required-feature: admin.user.manage
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Utilisateur à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccount'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /directory/sync:
+    get:
+      tags:
+        - users
+      operationId: getDirectorySyncStatus
+      summary: État de la fédération Active Directory (dernière synchronisation, erreurs)
+      x-required-feature: admin.user.read
+      responses:
+        '200':
+          description: État.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectorySyncStatus'
+    post:
+      tags:
+        - users
+      operationId: triggerDirectorySync
+      summary: Déclencher une synchronisation complète avec l'annuaire
+      x-required-feature: admin.user.manage
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+  /org/unit-types:
+    get:
+      tags:
+        - org
+      operationId: listUnitTypes
+      summary: Types d'unités (Direction, Département, Service, Agence…)
+      x-required-feature: admin.org.read
+      responses:
+        '200':
+          description: Types d'unités.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UnitType'
+    post:
+      tags:
+        - org
+      operationId: createUnitType
+      summary: Créer un type d'unité
+      x-required-feature: admin.org.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitType'
+      responses:
+        '201':
+          description: Type créé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /org/unit-types/{unitTypeId}:
+    put:
+      tags:
+        - org
+      operationId: updateUnitType
+      summary: Modifier un type d'unité
+      x-required-feature: admin.org.manage
+      parameters:
+        - name: unitTypeId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitType'
+      responses:
+        '200':
+          description: Type à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitType'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /org/units:
+    get:
+      tags:
+        - org
+      operationId: getOrgTree
+      summary: Arbre des unités organisationnelles
+      x-required-feature: admin.org.read
+      parameters:
+        - name: includeClosed
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Arbre (nœuds avec enfants).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrgUnitNode'
+    post:
+      tags:
+        - org
+      operationId: createOrgUnit
+      summary: Créer une unité sous un parent
+      x-required-feature: admin.org.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgUnitInput'
+      responses:
+        '201':
+          description: Unité créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgUnitNode'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /org/units/{unitId}:
+    parameters:
+      - $ref: '#/components/parameters/UnitIdPath'
+    put:
+      tags:
+        - org
+      operationId: updateOrgUnit
+      summary: Modifier une unité (libellés, code)
+      x-required-feature: admin.org.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgUnitInput'
+      responses:
+        '200':
+          description: Unité à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgUnitNode'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /org/units/{unitId}/actions/{actionCode}:
+    post:
+      tags:
+        - org
+      operationId: performOrgUnitAction
+      summary: Déplacer une unité (et son sous-arbre) ou la fermer — impact sur les affectations affiché avant confirmation
+      x-required-feature: admin.org.manage
+      parameters:
+        - $ref: '#/components/parameters/UnitIdPath'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Unité à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgUnitNode'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /positions:
+    get:
+      tags:
+        - positions
+      operationId: listPositions
+      summary: Positions du tenant (rang, portée, rattachement, rôles, nombre de titulaires)
+      x-required-feature: admin.position.read
+      parameters:
+        - name: includeInactive
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Positions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Position'
+    post:
+      tags:
+        - positions
+      operationId: createPosition
+      summary: Créer une position
+      x-required-feature: admin.position.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PositionInput'
+      responses:
+        '201':
+          description: Position créée (en attente de validation si elle porte des fonctionnalités sensibles).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /positions/{positionId}:
+    parameters:
+      - $ref: '#/components/parameters/PositionId'
+    get:
+      tags:
+        - positions
+      operationId: getPosition
+      summary: Détail d'une position (rôles, fonctionnalités résultantes, titulaires)
+      x-required-feature: admin.position.read
+      responses:
+        '200':
+          description: Position.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - positions
+      operationId: updatePosition
+      summary: Modifier une position (renommer, rang, portée, rôles)
+      x-required-feature: admin.position.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PositionInput'
+      responses:
+        '200':
+          description: Position à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /positions/{positionId}/actions/{actionCode}:
+    post:
+      tags:
+        - positions
+      operationId: performPositionAction
+      summary: Désactiver ou réactiver une position
+      x-required-feature: admin.position.manage
+      parameters:
+        - $ref: '#/components/parameters/PositionId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Position à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Position'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /features:
+    get:
+      tags:
+        - roles
+      operationId: listFeatures
+      summary: Catalogue des fonctionnalités de la plateforme (lecture seule), groupées par module
+      x-required-feature: admin.role.read
+      responses:
+        '200':
+          description: Fonctionnalités.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Feature'
+  /roles:
+    get:
+      tags:
+        - roles
+      operationId: listRoles
+      summary: Rôles (organisationnels et de mission)
+      x-required-feature: admin.role.read
+      responses:
+        '200':
+          description: Rôles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Role'
+    post:
+      tags:
+        - roles
+      operationId: createRole
+      summary: Créer un rôle
+      x-required-feature: admin.role.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleInput'
+      responses:
+        '201':
+          description: Rôle créé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /roles/{roleId}:
+    put:
+      tags:
+        - roles
+      operationId: updateRole
+      summary: Modifier un rôle (libellé, type)
+      x-required-feature: admin.role.manage
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleInput'
+      responses:
+        '200':
+          description: Rôle à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /role-feature-matrix:
+    get:
+      tags:
+        - roles
+      operationId: getRoleFeatureMatrix
+      summary: Matrice rôles × fonctionnalités (avec conflits SoD détectés)
+      x-required-feature: admin.role.read
+      responses:
+        '200':
+          description: Matrice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleFeatureMatrix'
+    put:
+      tags:
+        - roles
+      operationId: updateRoleFeatureMatrix
+      summary: Enregistrer des modifications de la matrice (différentiel) — double validation si fonctionnalités sensibles
+      x-required-feature: admin.role.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - changes
+              properties:
+                version:
+                  type: integer
+                changes:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - roleId
+                      - featureCode
+                      - granted
+                    properties:
+                      roleId:
+                        $ref: '#/components/schemas/Id'
+                      featureCode:
+                        type: string
+                      granted:
+                        type: boolean
+      responses:
+        '200':
+          description: Modifications appliquées ou soumises à validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeResult'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /assignments:
+    get:
+      tags:
+        - assignments
+      operationId: listAssignments
+      summary: Affectations (titulaires, intérims, délégations), actives ou à une date donnée
+      x-required-feature: admin.assignment.read
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/UnitId'
+        - name: userId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: positionId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum:
+              - HOLDER
+              - INTERIM
+              - DELEGATION
+        - name: at
+          in: query
+          description: Affectations valides à cette date (historique « qui avait quel droit »).
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Affectations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentPage'
+    post:
+      tags:
+        - assignments
+      operationId: createAssignment
+      summary: Affecter un utilisateur à une position dans une unité (contrôle SoD statique, cardinalité, auto-octroi)
+      x-required-feature: admin.assignment.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentInput'
+      responses:
+        '201':
+          description: Affectation créée ou soumise à validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /assignments/{assignmentId}:
+    parameters:
+      - $ref: '#/components/parameters/AssignmentId'
+    get:
+      tags:
+        - assignments
+      operationId: getAssignment
+      summary: Détail d'une affectation
+      x-required-feature: admin.assignment.read
+      responses:
+        '200':
+          description: Affectation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - assignments
+      operationId: updateAssignment
+      summary: Modifier les dates ou les restrictions d'une affectation
+      x-required-feature: admin.assignment.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentInput'
+      responses:
+        '200':
+          description: Affectation à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /assignments/{assignmentId}/actions/{actionCode}:
+    post:
+      tags:
+        - assignments
+      operationId: performAssignmentAction
+      summary: Mettre fin à une affectation
+      x-required-feature: admin.assignment.manage
+      parameters:
+        - $ref: '#/components/parameters/AssignmentId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Affectation à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /sod-rules:
+    get:
+      tags:
+        - sod
+      operationId: listSodRules
+      summary: Règles de séparation des tâches (statiques et dynamiques)
+      x-required-feature: admin.sod.read
+      responses:
+        '200':
+          description: Règles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SodRule'
+    post:
+      tags:
+        - sod
+      operationId: createSodRule
+      summary: Créer une règle SoD
+      x-required-feature: admin.sod.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SodRule'
+      responses:
+        '201':
+          description: Règle créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SodRule'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /sod-rules/{ruleId}:
+    parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    put:
+      tags:
+        - sod
+      operationId: updateSodRule
+      summary: Modifier une règle SoD
+      x-required-feature: admin.sod.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SodRule'
+      responses:
+        '200':
+          description: Règle à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SodRule'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - sod
+      operationId: deleteSodRule
+      summary: Supprimer une règle SoD (double validation)
+      x-required-feature: admin.sod.manage
+      responses:
+        '200':
+          description: Suppression soumise à validation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeResult'
+  /sod-conflicts:
+    get:
+      tags:
+        - sod
+      operationId: listSodConflicts
+      summary: Conflits SoD statiques existants (cumuls interdits constatés sur les affectations actuelles)
+      x-required-feature: admin.sod.read
+      responses:
+        '200':
+          description: Conflits.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    user:
+                      $ref: '#/components/schemas/UserSummary'
+                    rule:
+                      $ref: '#/components/schemas/SodRule'
+                    viaAssignments:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Id'
+  /authz-simulations:
+    post:
+      tags:
+        - authz-simulation
+      operationId: simulateAuthorization
+      summary: « Que peut faire X ? » ou « X peut-il faire F sur R ? » — avec l'explication (affectation, rôle, portée)
+      x-required-feature: admin.authz.simulate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userId
+              properties:
+                userId:
+                  $ref: '#/components/schemas/Id'
+                featureCode:
+                  type: string
+                resource:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                        - UNIT
+                        - MISSION
+                        - OBJECT
+                    id:
+                      $ref: '#/components/schemas/Id'
+                at:
+                  type: string
+                  format: date
+                  description: Date de simulation (passée ou future)
+      responses:
+        '200':
+          description: Résultat.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthzSimulationResult'
+  /authz-simulations/who-can:
+    post:
+      tags:
+        - authz-simulation
+      operationId: simulateWhoCan
+      summary: « Qui peut faire F sur R ? » (ex. qui peut approuver cet ordre de mission)
+      x-required-feature: admin.authz.simulate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - featureCode
+                - resource
+              properties:
+                featureCode:
+                  type: string
+                  example: mission.order.approve
+                resource:
+                  type: object
+                  required:
+                    - type
+                    - id
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                        - UNIT
+                        - MISSION
+                        - OBJECT
+                    id:
+                      $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: Utilisateurs habilités et justification.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    user:
+                      $ref: '#/components/schemas/UserSummary'
+                    via:
+                      type: string
+                      example: Position « Directeur de l'Inspection » (Inspection Générale, portée UNIT_TREE)
+  /recertification-campaigns:
+    get:
+      tags:
+        - recertification
+      operationId: listRecertificationCampaigns
+      summary: Campagnes de recertification des habilitations (lot L2)
+      x-required-feature: admin.recertification.manage
+      responses:
+        '200':
+          description: Campagnes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecertificationCampaign'
+    post:
+      tags:
+        - recertification
+      operationId: createRecertificationCampaign
+      summary: Lancer une campagne (les managers attestent les affectations de leur périmètre)
+      x-required-feature: admin.recertification.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - label
+                - dueDate
+              properties:
+                label:
+                  type: string
+                  example: Recertification annuelle 2026
+                dueDate:
+                  type: string
+                  format: date
+                unitIds:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Id'
+      responses:
+        '201':
+          description: Campagne créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecertificationCampaign'
+  /recertification-campaigns/{campaignId}:
+    get:
+      tags:
+        - recertification
+      operationId: getRecertificationCampaign
+      summary: Avancement d'une campagne (attestées, révoquées, en attente)
+      x-required-feature: admin.recertification.manage
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: Campagne.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecertificationCampaign'
+  /change-requests:
+    get:
+      tags:
+        - change-requests
+      operationId: listChangeRequests
+      summary: Demandes de modification d'habilitations en attente de double validation
+      x-required-feature: admin.change.approve
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum:
+              - PENDING
+              - APPROVED
+              - REJECTED
+            default: PENDING
+      responses:
+        '200':
+          description: Demandes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChangeRequest'
+  /change-requests/{changeRequestId}/actions/{actionCode}:
+    post:
+      tags:
+        - change-requests
+      operationId: performChangeRequestAction
+      summary: Approuver ou rejeter une demande (interdit à son auteur et au bénéficiaire)
+      x-required-feature: admin.change.approve
+      parameters:
+        - name: changeRequestId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Demande traitée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangeRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    EntityId:
+      name: entityId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    UnitIdPath:
+      name: unitId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    PositionId:
+      name: positionId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    AssignmentId:
+      name: assignmentId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ActionCode:
+      name: actionCode
+      in: path
+      required: true
+      description: Code d'une action disponible (voir availableActions).
+      schema:
+        type: string
+        pattern: ^[a-z][a-z0-9-]*$
+        example: submit-for-review
+    Page:
+      name: page
+      in: query
+      description: Numéro de page (commence à 0).
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      description: Taille de page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    Sort:
+      name: sort
+      in: query
+      description: 'Tri : champ,asc|desc — répétable.'
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          example: updatedAt,desc
+    Q:
+      name: q
+      in: query
+      description: Recherche libre.
+      schema:
+        type: string
+        maxLength: 200
+    UnitId:
+      name: unitId
+      in: query
+      description: Filtre sur une unité organisationnelle (et ses sous-unités si la portée le permet).
+      schema:
+        $ref: '#/components/schemas/Id'
+  schemas:
+    AdminOverview:
+      type: object
+      properties:
+        health:
+          type: string
+          enum:
+            - OK
+            - DEGRADED
+            - DOWN
+        pendingChangeRequests:
+          type: integer
+        pendingPublications:
+          type: integer
+        openAlerts:
+          type: integer
+        usersWithoutAssignment:
+          type: integer
+        staticSodConflicts:
+          type: integer
+        lastDirectorySyncAt:
+          type: string
+          format: date-time
+        licenseExpiresOn:
+          type: string
+          format: date
+        connectorsDown:
+          type: integer
+    EntityInput:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        version:
+          type: integer
+        code:
+          type: string
+          example: BANQUE-DEMO-FILIALE-01
+        label:
+          type: string
+          example: Banque Démo — Filiale Leasing
+        enabledModules:
+          type: array
+          items:
+            type: string
+            enum:
+              - AUDIT
+              - CCM
+              - SIGNATURE
+              - REPORTING
+              - RESOURCES
+              - QUALITY
+              - AI
+        locales:
+          type: array
+          items:
+            type: string
+            enum:
+              - fr
+              - ar
+              - en
+        defaultLocale:
+          type: string
+        packCode:
+          type: string
+          example: PACK-BANQUE
+    Entity:
+      allOf:
+        - $ref: '#/components/schemas/EntityInput'
+        - type: object
+          required:
+            - id
+            - status
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            status:
+              type: string
+              enum:
+                - PROVISIONING
+                - ACTIVE
+                - SUSPENDED
+                - MAINTENANCE
+            keycloakRealm:
+              type: string
+            dataIsolation:
+              type: string
+              enum:
+                - SCHEMA
+                - PDB
+              description: Isolation physique (§4.7)
+            usersCount:
+              type: integer
+    UserAccount:
+      type: object
+      required:
+        - id
+        - username
+        - displayName
+        - source
+        - accountStatus
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        username:
+          type: string
+          example: insp1.demo
+        displayName:
+          type: string
+        email:
+          type: string
+          format: email
+        source:
+          type: string
+          enum:
+            - AD
+            - LOCAL
+        accountStatus:
+          type: string
+          enum:
+            - ACTIVE
+            - LOCKED
+            - DISABLED
+            - NO_ASSIGNMENT
+        mfaConfigured:
+          type: boolean
+        lastLoginAt:
+          type: string
+          format: date-time
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assignment'
+        activeSessions:
+          type: integer
+    UserPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserAccount'
+    DirectorySyncStatus:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: ad-banque
+        lastFullSyncAt:
+          type: string
+          format: date-time
+        lastChangedSyncAt:
+          type: string
+          format: date-time
+        importedUsers:
+          type: integer
+        failedUsers:
+          type: integer
+        lastError:
+          type: string
+    UnitType:
+      type: object
+      required:
+        - code
+        - label
+        - depth
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        version:
+          type: integer
+        code:
+          type: string
+          example: DEPARTEMENT
+        label:
+          $ref: '#/components/schemas/LocalizedText'
+        depth:
+          type: integer
+          minimum: 0
+    OrgUnitInput:
+      type: object
+      required:
+        - code
+        - label
+        - unitTypeId
+      properties:
+        version:
+          type: integer
+        code:
+          type: string
+          example: DEP-INSP-RESEAU
+        label:
+          $ref: '#/components/schemas/LocalizedText'
+        unitTypeId:
+          $ref: '#/components/schemas/Id'
+        parentId:
+          $ref: '#/components/schemas/Id'
+    OrgUnitNode:
+      type: object
+      required:
+        - id
+        - code
+        - label
+        - typeLabel
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+        label:
+          type: string
+        typeLabel:
+          type: string
+        closed:
+          type: boolean
+        assignmentsCount:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrgUnitNode'
+    PositionInput:
+      type: object
+      required:
+        - code
+        - label
+        - rank
+        - scope
+      properties:
+        version:
+          type: integer
+        code:
+          type: string
+          example: INSPECTEUR_GENERAL
+        label:
+          $ref: '#/components/schemas/LocalizedText'
+        rank:
+          type: integer
+          minimum: 1
+          maximum: 99
+          example: 10
+        unitTypeId:
+          $ref: '#/components/schemas/Id'
+          description: Vide = niveau tenant
+        scope:
+          type: string
+          enum:
+            - UNIT
+            - UNIT_TREE
+            - TENANT
+        reportsToId:
+          $ref: '#/components/schemas/Id'
+        maxHoldersPerUnit:
+          type: integer
+          minimum: 1
+        roleIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+    Position:
+      allOf:
+        - $ref: '#/components/schemas/PositionInput'
+        - type: object
+          required:
+            - id
+            - active
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            active:
+              type: boolean
+            fromPack:
+              type: boolean
+            unitTypeLabel:
+              type: string
+            reportsToLabel:
+              type: string
+            roles:
+              type: array
+              items:
+                $ref: '#/components/schemas/Role'
+            resultingFeatures:
+              type: array
+              items:
+                type: string
+            holdersCount:
+              type: integer
+            pendingChange:
+              type: boolean
+    Feature:
+      type: object
+      required:
+        - code
+        - module
+        - label
+      properties:
+        code:
+          type: string
+          example: report.final.approve
+        module:
+          type: string
+          example: AUDIT
+        label:
+          type: string
+          example: Approuver le rapport définitif
+        scopable:
+          type: boolean
+        sensitive:
+          type: boolean
+        deprecated:
+          type: boolean
+    RoleInput:
+      type: object
+      required:
+        - code
+        - label
+        - kind
+      properties:
+        version:
+          type: integer
+        code:
+          type: string
+          example: VALIDATEUR_CONSTATS
+        label:
+          $ref: '#/components/schemas/LocalizedText'
+        kind:
+          type: string
+          enum:
+            - ORGANISATIONAL
+            - MISSION
+    Role:
+      allOf:
+        - $ref: '#/components/schemas/RoleInput'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            fromPack:
+              type: boolean
+            featureCodes:
+              type: array
+              items:
+                type: string
+            positionsCount:
+              type: integer
+    RoleFeatureMatrix:
+      type: object
+      required:
+        - version
+        - roles
+        - features
+        - grants
+      properties:
+        version:
+          type: integer
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/Feature'
+        grants:
+          type: array
+          items:
+            type: object
+            properties:
+              roleId:
+                $ref: '#/components/schemas/Id'
+              featureCode:
+                type: string
+        sodWarnings:
+          type: array
+          items:
+            type: object
+            properties:
+              roleId:
+                $ref: '#/components/schemas/Id'
+              ruleId:
+                $ref: '#/components/schemas/Id'
+              message:
+                type: string
+    AssignmentInput:
+      type: object
+      required:
+        - userId
+        - positionId
+        - kind
+        - validFrom
+      properties:
+        version:
+          type: integer
+        userId:
+          $ref: '#/components/schemas/Id'
+        positionId:
+          $ref: '#/components/schemas/Id'
+        unitId:
+          $ref: '#/components/schemas/Id'
+        kind:
+          type: string
+          enum:
+            - HOLDER
+            - INTERIM
+            - DELEGATION
+        delegatedById:
+          $ref: '#/components/schemas/Id'
+        restrictedFeatureCodes:
+          type: array
+          description: Délégation partielle — sous-ensemble de fonctionnalités.
+          items:
+            type: string
+        validFrom:
+          type: string
+          format: date
+        validTo:
+          type: string
+          format: date
+    Assignment:
+      allOf:
+        - $ref: '#/components/schemas/AssignmentInput'
+        - type: object
+          required:
+            - id
+            - state
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            user:
+              $ref: '#/components/schemas/UserSummary'
+            positionLabel:
+              type: string
+            unit:
+              $ref: '#/components/schemas/UnitSummary'
+            state:
+              type: string
+              enum:
+                - PENDING_APPROVAL
+                - ACTIVE
+                - FUTURE
+                - ENDED
+            approvedBy:
+              $ref: '#/components/schemas/UserSummary'
+    AssignmentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Assignment'
+    SodRule:
+      type: object
+      required:
+        - featureA
+        - featureB
+        - type
+        - severity
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        version:
+          type: integer
+        featureA:
+          type: string
+          example: finding.write
+        featureB:
+          type: string
+          example: finding.validate
+        type:
+          type: string
+          enum:
+            - STATIC
+            - DYNAMIC
+        severity:
+          type: string
+          enum:
+            - BLOCK
+            - WARN
+        description:
+          type: string
+    AuthzSimulationResult:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        features:
+          type: array
+          description: Si featureCode est absent — tout ce que l'utilisateur peut faire.
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              scopes:
+                type: array
+                items:
+                  type: string
+        explanation:
+          type: array
+          items:
+            type: object
+            properties:
+              step:
+                type: string
+                example: Affectation « Chef de département Inspection » (titulaire, depuis 2026-01-01)
+              result:
+                type: string
+                enum:
+                  - GRANTS
+                  - DOES_NOT_COVER
+                  - BLOCKED_BY_SOD
+                  - MODULE_DISABLED
+    RecertificationCampaign:
+      type: object
+      required:
+        - id
+        - label
+        - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        label:
+          type: string
+        status:
+          $ref: '#/components/schemas/Ref'
+        dueDate:
+          type: string
+          format: date
+        totalItems:
+          type: integer
+        attested:
+          type: integer
+        revoked:
+          type: integer
+        pending:
+          type: integer
+    ChangeRequest:
+      type: object
+      required:
+        - id
+        - kind
+        - state
+        - requestedBy
+        - requestedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          type: string
+          enum:
+            - ASSIGNMENT
+            - ROLE_FEATURES
+            - POSITION
+            - SOD_RULE
+        summary:
+          type: string
+          example: Affecter insp2.demo comme Chef de département Inspection (intérim)
+        state:
+          type: string
+          enum:
+            - PENDING
+            - APPROVED
+            - REJECTED
+        requestedBy:
+          $ref: '#/components/schemas/UserSummary'
+        requestedAt:
+          type: string
+          format: date-time
+        beneficiary:
+          $ref: '#/components/schemas/UserSummary'
+        sensitiveFeatures:
+          type: array
+          items:
+            type: string
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+    ChangeResult:
+      type: object
+      required:
+        - state
+      properties:
+        state:
+          type: string
+          enum:
+            - APPLIED
+            - PENDING_APPROVAL
+        changeRequestId:
+          $ref: '#/components/schemas/Id'
+        warnings:
+          type: array
+          items:
+            type: string
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    Job:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        type:
+          type: string
+          example: REPORT_GENERATION
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+            - CANCELLED
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        resultUrl:
+          type: string
+          description: Lien vers le résultat quand status = SUCCEEDED
+        problem:
+          $ref: '#/components/schemas/Problem'
+    ActionRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 4000
+        payload:
+          type: object
+          additionalProperties: true
+          description: Données propres à l'action (ex. motif de refus, destinataires).
+    PageMeta:
+      type: object
+      required:
+        - page
+        - size
+        - totalItems
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          example: 25
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 42
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 2
+    UserSummary:
+      type: object
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+          example: Inspecteur Un
+        positionLabel:
+          type: string
+          description: Position principale courante (libellé du tenant)
+          example: Inspecteur
+        unitLabel:
+          type: string
+          example: Département Inspection du Réseau
+    UnitSummary:
+      type: object
+      required:
+        - id
+        - label
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+          example: DIR-RESEAU
+        label:
+          type: string
+          example: Direction du Réseau
+        typeLabel:
+          type: string
+          example: Direction
+    LocalizedText:
+      type: object
+      description: Texte traduit (fr obligatoire au go-live, D15).
+      required:
+        - fr
+      properties:
+        fr:
+          type: string
+        ar:
+          type: string
+        en:
+          type: string
+      example:
+        fr: Inspection d'agence
+        ar: تفتيش الوكالة
+        en: Branch inspection
+    Ref:
+      type: object
+      description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: HIGH
+        label:
+          type: string
+          description: Libellé dans la langue de l'utilisateur
+          example: Élevée
+        color:
+          type: string
+          description: Token de couleur sémantique (§1.6), jamais une couleur en dur
+          example: criticality-high
+    AvailableAction:
+      type: object
+      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: submit-for-review
+        label:
+          type: string
+          example: Soumettre à la revue
+        style:
+          type: string
+          enum:
+            - primary
+            - secondary
+            - danger
+          default: secondary
+        requiresComment:
+          type: boolean
+          default: false
+        requiresSignature:
+          type: boolean
+          default: false
+        requiresStepUp:
+          type: boolean
+          default: false
+          description: Authentification renforcée (acr=2) exigée
+        confirmationMessage:
+          type: string
+          description: Message de confirmation à afficher avant exécution
+  responses:
+    JobAccepted:
+      description: Opération longue acceptée — suivre le Job.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Job'
+    Forbidden:
+      description: Fonctionnalité non détenue sur cette portée, ou refus de séparation des tâches (code CTN-IAM-0210).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/sod-violation
+            title: Séparation des tâches
+            status: 403
+            detail: Vous avez rédigé ce constat ; sa validation doit être faite par une autre personne.
+            code: CTN-IAM-0210
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+            sodRule: NOT_CREATOR
+    ValidationFailed:
+      description: Données invalides — détail par champ dans errors[].
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/validation
+            title: Données invalides
+            status: 422
+            code: CTN-AUD-0422
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+            errors:
+              - field: plannedEnd
+                code: date.before-start
+                message: La date de fin doit être postérieure à la date de début.
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflit de version (l'objet a changé) ou état incompatible avec l'action.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

@@ -155,6 +155,32 @@
               </configOptions>
             </configuration>
           </execution>
+          <execution>
+            <id>generate-admin-iam</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/admin/tenancy-iam.yaml.
+                   Régénérer via `npx @redocly/cli bundle admin/tenancy-iam.yaml -o …/src/main/openapi/admin-iam.bundled.yaml`. -->
+              <inputSpec>src/main/openapi/admin-iam.bundled.yaml</inputSpec>
+              <generatorName>spring</generatorName>
+              <library>spring-boot</library>
+              <apiPackage>gen.admin.iam.api</apiPackage>
+              <modelPackage>gen.admin.iam.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <interfaceOnly>true</interfaceOnly>
+                <useSpringBoot3>true</useSpringBoot3>
+                <useTags>true</useTags>
+                <documentationProvider>none</documentationProvider>
+                <openApiNullable>false</openApiNullable>
+                <useJakartaEe>true</useJakartaEe>
+                <skipDefaultInterface>false</skipDefaultInterface>
+              </configOptions>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>
