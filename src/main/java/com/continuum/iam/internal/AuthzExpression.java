@@ -37,6 +37,17 @@ public class AuthzExpression {
         return authorization.can(tenantId(jwt), userId(jwt), featureCode, unitId);
     }
 
+    /**
+     * Droit à l'échelle de l'entité (§2.1.4) : vrai si l'utilisateur détient {@code featureCode} par au
+     * moins une affectation, quelle qu'en soit la portée. Variante sans unité pour les ressources
+     * <em>tenant-wide</em> (ex. création de rôle, §2.1.1) où aucune unité ne qualifie la ressource.
+     */
+    public boolean can(String featureCode) {
+        Jwt jwt = currentJwt();
+        return authorization.permissions(tenantId(jwt), userId(jwt)).stream()
+                .anyMatch(f -> featureCode.equals(f.featureCode()));
+    }
+
     /** Droit contextuel de mission (§2.1.1). */
     public boolean canOnMission(String featureCode, UUID missionId) {
         Jwt jwt = currentJwt();
