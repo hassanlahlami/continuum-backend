@@ -1,0 +1,392 @@
+openapi: 3.1.0
+info:
+  title: Continuum — API publique
+  version: 0.1.0
+  x-status: draft
+  description: |
+    API anonyme : configuration d'authentification des frontends, thème du tenant (y compris pour la page de connexion Keycloak, §1.6.3), état de la plateforme, vérification d'un document signé. Le tenant est résolu par le nom d'hôte (sous-domaine) ou le paramètre entity.
+servers:
+  - url: /api/public
+security: []
+tags:
+  - name: bootstrap
+  - name: theme
+  - name: verification
+paths:
+  /auth-config:
+    get:
+      tags:
+        - bootstrap
+      operationId: getAuthConfig
+      summary: Paramètres OIDC du frontend (émetteur Keycloak, client, niveaux d'authentification)
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/Entity'
+        - name: app
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - app
+              - admin
+      responses:
+        '200':
+          description: Configuration OIDC.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthConfig'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /status:
+    get:
+      tags:
+        - bootstrap
+      operationId: getPlatformStatus
+      summary: État de la plateforme (normal ou maintenance) — page COM-12
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/Entity'
+      responses:
+        '200':
+          description: État courant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformStatus'
+  /theme:
+    get:
+      tags:
+        - theme
+      operationId: getThemeStylesheet
+      summary: Feuille CSS compilée du thème publié (variables --ct-*, @font-face, palettes clair/sombre)
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/Entity'
+        - name: If-None-Match
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Feuille de style (mise en cache par ETag).
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            text/css:
+              schema:
+                type: string
+        '304':
+          description: Thème inchangé.
+  /theme/manifest:
+    get:
+      tags:
+        - theme
+      operationId: getThemeManifest
+      summary: Identité du tenant (nom, logos, langues, version du thème)
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/Entity'
+      responses:
+        '200':
+          description: Manifeste du thème.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeManifest'
+  /assets/{assetId}:
+    get:
+      tags:
+        - theme
+      operationId: getPublicAsset
+      summary: Ressource graphique publique (logo, favicon, police, image de connexion)
+      x-required-feature: public
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: Fichier.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentEncoding: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /document-verifications:
+    post:
+      tags:
+        - verification
+      operationId: verifyDocument
+      summary: Vérifier un document signé déposé (empreinte, signatures, horodatage) — page COM-13
+      x-required-feature: public
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  contentEncoding: binary
+      responses:
+        '200':
+          description: Résultat de vérification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResult'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /document-verifications/{verificationCode}:
+    get:
+      tags:
+        - verification
+      operationId: verifyDocumentByCode
+      summary: Vérifier un document à partir du code imprimé (QR code du rapport)
+      x-required-feature: public
+      parameters:
+        - name: verificationCode
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Z0-9]{12}$
+      responses:
+        '200':
+          description: Résultat de vérification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+components:
+  parameters:
+    Entity:
+      name: entity
+      in: query
+      description: Code de l'entité (tenant) si le nom d'hôte ne suffit pas.
+      schema:
+        type: string
+        example: BANQUE-DEMO
+  schemas:
+    AuthConfig:
+      type: object
+      required:
+        - issuer
+        - clientId
+      properties:
+        issuer:
+          type: string
+          example: http://localhost:8180/realms/banque-demo
+        clientId:
+          type: string
+          example: continuum-app
+        stepUpAcr:
+          type: string
+          example: '2'
+        defaultLocale:
+          type: string
+          example: fr
+    PlatformStatus:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          enum:
+            - NORMAL
+            - MAINTENANCE
+            - DEGRADED
+        message:
+          $ref: '#/components/schemas/LocalizedText'
+        until:
+          type: string
+          format: date-time
+    ThemeManifest:
+      type: object
+      required:
+        - appName
+        - themeVersion
+        - locales
+      properties:
+        appName:
+          type: string
+          example: Continuum — Banque Démo
+        themeVersion:
+          type: integer
+          example: 4
+        logoAssetId:
+          $ref: '#/components/schemas/Id'
+        logoDarkAssetId:
+          $ref: '#/components/schemas/Id'
+        faviconAssetId:
+          $ref: '#/components/schemas/Id'
+        loginImageAssetId:
+          $ref: '#/components/schemas/Id'
+        locales:
+          type: array
+          items:
+            type: string
+            enum:
+              - fr
+              - ar
+              - en
+          example:
+            - fr
+        defaultLocale:
+          type: string
+          example: fr
+    VerificationResult:
+      type: object
+      required:
+        - outcome
+      properties:
+        outcome:
+          type: string
+          enum:
+            - VALID
+            - ALTERED
+            - UNKNOWN_DOCUMENT
+            - SIGNATURE_INVALID
+        documentTitle:
+          type: string
+          example: Rapport définitif — Inspection agence A001
+        documentSha256:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+        signatures:
+          type: array
+          items:
+            type: object
+            properties:
+              signerDisplayName:
+                type: string
+              capacity:
+                type: string
+                description: « En qualité de » figé à la signature (§2.4.6)
+                example: Directeur de l'Inspection
+              level:
+                type: string
+                enum:
+                  - SIMPLE
+                  - ADVANCED
+                  - QUALIFIED
+              signedAt:
+                type: string
+                format: date-time
+              valid:
+                type: boolean
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    LocalizedText:
+      type: object
+      description: Texte traduit (fr obligatoire au go-live, D15).
+      required:
+        - fr
+      properties:
+        fr:
+          type: string
+        ar:
+          type: string
+        en:
+          type: string
+      example:
+        fr: Inspection d'agence
+        ar: تفتيش الوكالة
+        en: Branch inspection
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+  responses:
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: Données invalides — détail par champ dans errors[].
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/validation
+            title: Données invalides
+            status: 422
+            code: CTN-AUD-0422
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+            errors:
+              - field: plannedEnd
+                code: date.before-start
+                message: La date de fin doit être postérieure à la date de début.
+    TooManyRequests:
+      description: Trop de requêtes (limitation de débit).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
