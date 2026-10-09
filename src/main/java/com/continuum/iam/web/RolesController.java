@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +35,7 @@ public class RolesController implements RolesApi {
     }
 
     @Override
+    @PreAuthorize("@authz.can('admin.role.manage')")
     public ResponseEntity<Role> createRole(RoleInput input) {
         Jwt jwt = currentJwt();
         UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
