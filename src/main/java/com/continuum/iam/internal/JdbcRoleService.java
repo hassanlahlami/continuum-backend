@@ -7,14 +7,15 @@ import com.continuum.iam.api.RoleService;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Écriture des rôles (plan §2.1.1), PostgreSQL. Le libellé i18n est stocké en JSONB ; chaque création
  * est journalisée dans le journal signé (§2.3) via l'API du module {@code audittrail}.
+ *
+ * <p>Instanciée par {@link RoleServiceConfig} selon le dialecte (D4) — pas de {@code @Service} pour
+ * éviter un bean {@link RoleService} en double avec {@link OracleRoleService}.
  */
-@Service
 public class JdbcRoleService implements RoleService {
 
     private final JdbcTemplate jdbc;
