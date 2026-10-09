@@ -1,0 +1,2095 @@
+openapi: 3.1.0
+info:
+  title: Continuum — Missions
+  version: 0.1.0
+  x-status: draft
+  description: |
+    Pages MIS-01 à MIS-13 : missions, ordre de mission, équipe, planning, préparation, objectifs et risques, programme de travail, vérifications, papiers de travail et sign-off, documents, réunions.
+servers:
+  - url: /api/app
+security:
+  - bearer: []
+tags:
+  - name: missions
+  - name: mission-order
+  - name: mission-team
+  - name: mission-schedule
+  - name: mission-preparation
+  - name: mission-program
+  - name: work-papers
+  - name: mission-documents
+  - name: mission-meetings
+paths:
+  /mission-types:
+    get:
+      tags:
+        - missions
+      operationId: listActiveMissionTypes
+      summary: Types de mission actifs (assistant de création) — le paramétrage est dans settings.yaml
+      x-required-feature:
+        - mission.read
+        - mission.create
+      responses:
+        '200':
+          description: Types de mission.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MissionType'
+  /missions/monitoring:
+    post:
+      tags:
+        - missions
+      operationId: getOrCreateMonitoringMission
+      summary: Ouvrir (ou retrouver) la mission de surveillance continue d'une période — accueille les constats issus d'exceptions CCM détectées hors mission (§5.3, D34)
+      x-required-feature: mission.create
+      x-scope: unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - period
+                - unitId
+              properties:
+                period:
+                  type: string
+                  pattern: ^\d{4}-Q[1-4]$
+                  example: 2026-Q3
+                unitId:
+                  $ref: '#/components/schemas/Id'
+                  description: Unité d'audit qui porte la surveillance
+      responses:
+        '200':
+          description: Mission de surveillance existante pour cette période et cette unité.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mission'
+        '201':
+          description: Mission de surveillance créée pour la période.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mission'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions:
+    get:
+      tags:
+        - missions
+      operationId: listMissions
+      summary: Missions du périmètre de l'utilisateur
+      x-required-feature: mission.read
+      x-scope: unit
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/UnitId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: missionTypeCode
+          in: query
+          schema:
+            type: string
+        - name: auditPlanId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: mine
+          in: query
+          description: Seulement les missions dont je suis membre.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Missions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+        - missions
+      operationId: createMission
+      summary: Créer une mission (dernière étape de l'assistant MIS-02)
+      x-required-feature: mission.create
+      x-scope: unit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionCreate'
+      responses:
+        '201':
+          description: Mission créée ; le processus BPMN lié au type de mission est démarré.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mission'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - missions
+      operationId: getMission
+      summary: Cockpit de la mission (phase, avancement, indicateurs, actions disponibles)
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Mission.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mission'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - missions
+      operationId: updateMission
+      summary: Modifier les informations générales de la mission
+      x-required-feature: mission.update
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionUpdate'
+      responses:
+        '200':
+          description: Mission à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mission'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/actions/{actionCode}:
+    post:
+      tags:
+        - missions
+      operationId: performMissionAction
+      summary: Action de workflow sur la mission (lancer, passer en réalisation, clôturer, suspendre…)
+      x-required-feature: mission.read
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Mission à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mission'
+        '202':
+          description: Circuit de signature ouvert.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureRequestRef'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/history:
+    get:
+      tags:
+        - missions
+      operationId: getMissionHistory
+      summary: Historique de la mission (transitions, validations, signatures)
+      x-required-feature: mission.read
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+      responses:
+        '200':
+          description: Historique.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HistoryEntry'
+  /missions/{missionId}/statistics:
+    get:
+      tags:
+        - missions
+      operationId: getMissionStatistics
+      summary: Statistiques de la mission (constats par criticité, avancement du programme, jours consommés)
+      x-required-feature: mission.read
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+      responses:
+        '200':
+          description: Statistiques.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionStatistics'
+  /missions/{missionId}/order:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-order
+      operationId: getMissionOrder
+      summary: Ordre de mission (contenu, statut, circuit de signature)
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Ordre de mission.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionOrder'
+    put:
+      tags:
+        - mission-order
+      operationId: updateMissionOrder
+      summary: Rédiger l'ordre de mission (brouillon)
+      x-required-feature: mission.order.write
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionOrderInput'
+      responses:
+        '200':
+          description: Ordre de mission à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionOrder'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/order/actions/{actionCode}:
+    post:
+      tags:
+        - mission-order
+      operationId: performMissionOrderAction
+      summary: Soumettre l'ordre de mission à signature, le notifier aux audités
+      x-required-feature: mission.order.write
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Ordre de mission à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionOrder'
+        '202':
+          description: Circuit de signature ouvert.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureRequestRef'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions/{missionId}/team:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-team
+      operationId: getMissionTeam
+      summary: Équipe de mission (rôles de mission, périodes)
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Équipe.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TeamMember'
+    put:
+      tags:
+        - mission-team
+      operationId: updateMissionTeam
+      summary: Définir l'équipe (contrôle d'indépendance et de SoD à l'enregistrement)
+      x-required-feature: mission.team.manage
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - members
+              properties:
+                version:
+                  type: integer
+                members:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TeamMemberInput'
+      responses:
+        '200':
+          description: Équipe enregistrée (avertissements éventuels).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TeamMember'
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                      example: insp2.demo a été affecté à l'agence A001 en 2025 (indépendance)
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/team/candidates:
+    get:
+      tags:
+        - mission-team
+      operationId: listMissionTeamCandidates
+      summary: Auditeurs proposables (disponibilité, compétences, conflits d'intérêts déclarés)
+      x-required-feature: mission.team.manage
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+        - $ref: '#/components/parameters/Q'
+      responses:
+        '200':
+          description: Candidats.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    user:
+                      $ref: '#/components/schemas/UserSummary'
+                    availableDays:
+                      type: number
+                    skills:
+                      type: array
+                      items:
+                        type: string
+                    independenceWarning:
+                      type: string
+  /missions/{missionId}/schedule:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-schedule
+      operationId: getMissionSchedule
+      summary: Jalons et budget temps de la mission
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Planning.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionSchedule'
+    put:
+      tags:
+        - mission-schedule
+      operationId: updateMissionSchedule
+      summary: Modifier les jalons et le budget temps
+      x-required-feature: mission.schedule.manage
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionSchedule'
+      responses:
+        '200':
+          description: Planning à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionSchedule'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/preparation:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-preparation
+      operationId: getMissionPreparation
+      summary: Prise de connaissance (notes, checklist de préparation, données de contexte)
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Préparation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionPreparation'
+    put:
+      tags:
+        - mission-preparation
+      operationId: updateMissionPreparation
+      summary: Enregistrer la prise de connaissance
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionPreparation'
+      responses:
+        '200':
+          description: Enregistré.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionPreparation'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions/{missionId}/objectives:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-program
+      operationId: listMissionObjectives
+      summary: Objectifs de la mission et risques associés
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Objectifs (avec leurs risques).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Objective'
+    post:
+      tags:
+        - mission-program
+      operationId: createMissionObjective
+      summary: Ajouter un objectif
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectiveInput'
+      responses:
+        '201':
+          description: Objectif créé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Objective'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/objectives/{objectiveId}:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+      - $ref: '#/components/parameters/ObjectiveId'
+    put:
+      tags:
+        - mission-program
+      operationId: updateMissionObjective
+      summary: Modifier un objectif
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectiveInput'
+      responses:
+        '200':
+          description: Objectif à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Objective'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - mission-program
+      operationId: deleteMissionObjective
+      summary: Supprimer un objectif (sans vérification exécutée)
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions/{missionId}/objectives/{objectiveId}/risks:
+    post:
+      tags:
+        - mission-program
+      operationId: createObjectiveRisk
+      summary: Rattacher un risque à un objectif (depuis le référentiel ou saisi)
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+        - $ref: '#/components/parameters/ObjectiveId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionRiskInput'
+      responses:
+        '201':
+          description: Risque ajouté.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionRisk'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/risks/{riskId}:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+      - name: riskId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    put:
+      tags:
+        - mission-program
+      operationId: updateMissionRisk
+      summary: Modifier un risque (impact, probabilité, contrôles attendus)
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MissionRiskInput'
+      responses:
+        '200':
+          description: Risque à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MissionRisk'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - mission-program
+      operationId: deleteMissionRisk
+      summary: Retirer un risque
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions/{missionId}/verifications:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-program
+      operationId: listVerifications
+      summary: Programme de travail — vérifications par risque, avec auditeur et avancement
+      x-required-feature: mission.read
+      x-scope: mission
+      parameters:
+        - name: assigneeId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/StatusFilter'
+      responses:
+        '200':
+          description: Vérifications.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Verification'
+    post:
+      tags:
+        - mission-program
+      operationId: createVerification
+      summary: Ajouter une vérification au programme
+      x-required-feature: mission.program.manage
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationInput'
+      responses:
+        '201':
+          description: Vérification créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/verifications/{verificationId}:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+      - $ref: '#/components/parameters/VerificationId'
+    get:
+      tags:
+        - mission-program
+      operationId: getVerification
+      summary: Fiche d'exécution d'une vérification (test, résultat, pièces, lien vers constats)
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Vérification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - mission-program
+      operationId: updateVerification
+      summary: Saisir l'exécution (travaux réalisés, résultat, conclusion)
+      x-required-feature: verification.execute
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationInput'
+      responses:
+        '200':
+          description: Vérification à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/verifications/{verificationId}/actions/{actionCode}:
+    post:
+      tags:
+        - mission-program
+      operationId: performVerificationAction
+      summary: Action sur une vérification (démarrer, terminer, rouvrir)
+      x-required-feature: verification.execute
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+        - $ref: '#/components/parameters/VerificationId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Vérification à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Verification'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions/{missionId}/verifications/{verificationId}/samples:
+    post:
+      tags:
+        - mission-program
+      operationId: drawVerificationSample
+      summary: Calculer et tirer un échantillon (aléatoire, systématique, MUS, stratifié) — lot L2
+      x-required-feature: verification.execute
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+        - $ref: '#/components/parameters/VerificationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleRequest'
+      responses:
+        '201':
+          description: Échantillon tiré et documenté.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sample'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/work-papers:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - work-papers
+      operationId: listWorkPapers
+      summary: Papiers de travail et état du sign-off (préparé / revu)
+      x-required-feature: mission.read
+      x-scope: mission
+      parameters:
+        - name: signOffState
+          in: query
+          schema:
+            type: string
+            enum:
+              - NOT_PREPARED
+              - PREPARED
+              - REVIEWED
+      responses:
+        '200':
+          description: Papiers de travail.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkPaper'
+    post:
+      tags:
+        - work-papers
+      operationId: createWorkPaper
+      summary: Créer un papier de travail (avec fichier éventuel)
+      x-required-feature: workpaper.write
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                reference:
+                  type: string
+                  example: PT-03.2
+                verificationId:
+                  $ref: '#/components/schemas/Id'
+                file:
+                  type: string
+                  contentEncoding: binary
+      responses:
+        '201':
+          description: Papier de travail créé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkPaper'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/work-papers/{workPaperId}:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+      - name: workPaperId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    get:
+      tags:
+        - work-papers
+      operationId: getWorkPaper
+      summary: Détail d'un papier de travail et historique des sign-off
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Papier de travail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkPaper'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /missions/{missionId}/work-papers/sign-offs:
+    post:
+      tags:
+        - work-papers
+      operationId: signOffWorkPapers
+      summary: Sign-off par lot (préparé ou revu) — périmètre explicite, SoD préparateur ≠ réviseur (§2.4.1)
+      x-required-feature:
+        - workpaper.write
+        - workpaper.review
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nature
+                - workPaperIds
+                - attestation
+              properties:
+                nature:
+                  type: string
+                  enum:
+                    - PREPARED
+                    - REVIEWED
+                workPaperIds:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: '#/components/schemas/Id'
+                attestation:
+                  type: string
+                  description: Texte d'intention accepté par l'utilisateur
+                  example: Je certifie avoir revu les papiers de travail listés.
+      responses:
+        '200':
+          description: Sign-off enregistré pour chaque papier.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkPaper'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions/{missionId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-documents
+      operationId: listMissionDocuments
+      summary: Documents et preuves de la mission (toutes origines)
+      x-required-feature: mission.read
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - name: origin
+          in: query
+          schema:
+            type: string
+            enum:
+              - AUDITOR
+              - AUDITEE
+              - CCM
+              - SYSTEM
+      responses:
+        '200':
+          description: Documents.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Attachment'
+    post:
+      tags:
+        - mission-documents
+      operationId: uploadMissionDocument
+      summary: Ajouter un document à la mission
+      x-required-feature: mission.document.write
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUpload'
+      responses:
+        '201':
+          description: Document ajouté (empreinte calculée).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/documents/{documentId}:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+      - name: documentId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    get:
+      tags:
+        - mission-documents
+      operationId: downloadMissionDocument
+      summary: Télécharger un document (accès journalisé)
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Fichier.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentEncoding: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - mission-documents
+      operationId: deleteMissionDocument
+      summary: Supprimer un document non encore utilisé comme preuve d'un objet validé
+      x-required-feature: mission.document.write
+      x-scope: mission
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /missions/{missionId}/meetings:
+    parameters:
+      - $ref: '#/components/parameters/MissionId'
+    get:
+      tags:
+        - mission-meetings
+      operationId: listMissionMeetings
+      summary: Réunions de la mission (ouverture, points d'étape, clôture)
+      x-required-feature: mission.read
+      x-scope: mission
+      responses:
+        '200':
+          description: Réunions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Meeting'
+    post:
+      tags:
+        - mission-meetings
+      operationId: createMissionMeeting
+      summary: Planifier une réunion
+      x-required-feature: mission.meeting.write
+      x-scope: mission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeetingInput'
+      responses:
+        '201':
+          description: Réunion créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meeting'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /missions/{missionId}/meetings/{meetingId}:
+    put:
+      tags:
+        - mission-meetings
+      operationId: updateMissionMeeting
+      summary: Modifier une réunion ou saisir son compte rendu
+      x-required-feature: mission.meeting.write
+      x-scope: mission
+      parameters:
+        - $ref: '#/components/parameters/MissionId'
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeetingInput'
+      responses:
+        '200':
+          description: Réunion à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meeting'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    MissionId:
+      name: missionId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ObjectiveId:
+      name: objectiveId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    VerificationId:
+      name: verificationId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Page:
+      name: page
+      in: query
+      description: Numéro de page (commence à 0).
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      description: Taille de page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    Sort:
+      name: sort
+      in: query
+      description: 'Tri : champ,asc|desc — répétable.'
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          example: updatedAt,desc
+    Q:
+      name: q
+      in: query
+      description: Recherche libre.
+      schema:
+        type: string
+        maxLength: 200
+    StatusFilter:
+      name: status
+      in: query
+      description: Codes de statut (répétable).
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    UnitId:
+      name: unitId
+      in: query
+      description: Filtre sur une unité organisationnelle (et ses sous-unités si la portée le permet).
+      schema:
+        $ref: '#/components/schemas/Id'
+    From:
+      name: from
+      in: query
+      description: Date de début (incluse).
+      schema:
+        type: string
+        format: date
+    To:
+      name: to
+      in: query
+      description: Date de fin (incluse).
+      schema:
+        type: string
+        format: date
+    ActionCode:
+      name: actionCode
+      in: path
+      required: true
+      description: Code d'une action disponible (voir availableActions).
+      schema:
+        type: string
+        pattern: ^[a-z][a-z0-9-]*$
+        example: submit-for-review
+  schemas:
+    MissionType:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: INSPECTION
+        label:
+          type: string
+          example: Inspection d'agence
+        processKey:
+          type: string
+          example: mission-inspection
+        defaultDurationDays:
+          type: integer
+          example: 15
+    MissionCreate:
+      type: object
+      required:
+        - title
+        - missionTypeCode
+        - unitId
+        - auditedEntityIds
+        - plannedStart
+        - plannedEnd
+      properties:
+        title:
+          type: string
+          example: Inspection agence A001 — Casablanca Centre
+        missionTypeCode:
+          type: string
+          example: INSPECTION
+        unitId:
+          $ref: '#/components/schemas/Id'
+          description: Unité d'audit qui porte la mission
+        auditPlanItemId:
+          $ref: '#/components/schemas/Id'
+        auditedEntityIds:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Id'
+        scope:
+          type: string
+          description: Périmètre de la mission
+        plannedStart:
+          type: string
+          format: date
+        plannedEnd:
+          type: string
+          format: date
+        budgetDays:
+          type: number
+          minimum: 0
+        team:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMemberInput'
+    MissionUpdate:
+      type: object
+      required:
+        - version
+        - title
+      properties:
+        version:
+          type: integer
+        title:
+          type: string
+        scope:
+          type: string
+        plannedStart:
+          type: string
+          format: date
+        plannedEnd:
+          type: string
+          format: date
+    Mission:
+      type: object
+      required:
+        - id
+        - reference
+        - title
+        - missionType
+        - status
+        - phase
+        - meta
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        reference:
+          type: string
+          example: MIS-2026-INSP-014
+        title:
+          type: string
+        missionType:
+          $ref: '#/components/schemas/Ref'
+        status:
+          $ref: '#/components/schemas/Ref'
+        phase:
+          $ref: '#/components/schemas/Ref'
+          description: Phase BPMN courante (préparation, réalisation, conclusion, suivi)
+        unit:
+          $ref: '#/components/schemas/UnitSummary'
+        auditedEntities:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                $ref: '#/components/schemas/Id'
+              label:
+                type: string
+        lead:
+          $ref: '#/components/schemas/UserSummary'
+        scope:
+          type: string
+        plannedStart:
+          type: string
+          format: date
+        plannedEnd:
+          type: string
+          format: date
+        progressPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        findingsCount:
+          type: integer
+        overdueTasksCount:
+          type: integer
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+        meta:
+          $ref: '#/components/schemas/AuditMeta'
+    MissionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Mission'
+    MissionStatistics:
+      type: object
+      properties:
+        findingsByCriticality:
+          type: array
+          items:
+            type: object
+            properties:
+              criticality:
+                $ref: '#/components/schemas/Ref'
+              count:
+                type: integer
+        verificationsDone:
+          type: integer
+        verificationsTotal:
+          type: integer
+        workPapersReviewed:
+          type: integer
+        workPapersTotal:
+          type: integer
+        daysBudget:
+          type: number
+        daysConsumed:
+          type: number
+    MissionOrderInput:
+      type: object
+      required:
+        - version
+        - body
+      properties:
+        version:
+          type: integer
+        body:
+          type: string
+          description: Contenu (Markdown restreint ou gabarit rempli)
+        addressees:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        templateId:
+          $ref: '#/components/schemas/Id'
+    MissionOrder:
+      allOf:
+        - $ref: '#/components/schemas/MissionOrderInput'
+        - type: object
+          required:
+            - status
+          properties:
+            status:
+              $ref: '#/components/schemas/Ref'
+            signatureRequestId:
+              $ref: '#/components/schemas/Id'
+            locked:
+              type: boolean
+              description: Vrai une fois signé
+            availableActions:
+              type: array
+              items:
+                $ref: '#/components/schemas/AvailableAction'
+    TeamMemberInput:
+      type: object
+      required:
+        - userId
+        - missionRoleCode
+      properties:
+        userId:
+          $ref: '#/components/schemas/Id'
+        missionRoleCode:
+          type: string
+          example: MISSION_LEAD
+        validFrom:
+          type: string
+          format: date
+        validTo:
+          type: string
+          format: date
+        allocatedDays:
+          type: number
+          minimum: 0
+    TeamMember:
+      allOf:
+        - $ref: '#/components/schemas/TeamMemberInput'
+        - type: object
+          required:
+            - user
+            - missionRole
+          properties:
+            user:
+              $ref: '#/components/schemas/UserSummary'
+            missionRole:
+              $ref: '#/components/schemas/Ref'
+            independenceDeclaredAt:
+              type: string
+              format: date-time
+    MissionSchedule:
+      type: object
+      required:
+        - version
+        - milestones
+      properties:
+        version:
+          type: integer
+        budgetDays:
+          type: number
+        consumedDays:
+          type: number
+          readOnly: true
+        milestones:
+          type: array
+          items:
+            type: object
+            required:
+              - code
+              - plannedDate
+            properties:
+              code:
+                type: string
+                example: OPENING_MEETING
+              label:
+                type: string
+                example: Réunion d'ouverture
+              plannedDate:
+                type: string
+                format: date
+              actualDate:
+                type: string
+                format: date
+    MissionPreparation:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+        contextNotes:
+          type: string
+        previousMissions:
+          type: array
+          readOnly: true
+          items:
+            type: object
+            properties:
+              missionId:
+                $ref: '#/components/schemas/Id'
+              title:
+                type: string
+              year:
+                type: integer
+        openRecommendationsCount:
+          type: integer
+          readOnly: true
+        checklist:
+          type: array
+          items:
+            type: object
+            required:
+              - code
+              - done
+            properties:
+              code:
+                type: string
+              label:
+                type: string
+              done:
+                type: boolean
+    ObjectiveInput:
+      type: object
+      required:
+        - title
+      properties:
+        version:
+          type: integer
+        title:
+          type: string
+          example: S'assurer de la conformité des opérations de virement
+        description:
+          type: string
+        order:
+          type: integer
+    Objective:
+      allOf:
+        - $ref: '#/components/schemas/ObjectiveInput'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            risks:
+              type: array
+              items:
+                $ref: '#/components/schemas/MissionRisk'
+    MissionRiskInput:
+      type: object
+      required:
+        - label
+        - impact
+        - likelihood
+      properties:
+        version:
+          type: integer
+        riskFamilyCode:
+          type: string
+          example: OPERATIONNEL
+        label:
+          type: string
+          example: Virements validés par leur propre émetteur
+        impact:
+          type: integer
+          minimum: 1
+          maximum: 5
+        likelihood:
+          type: integer
+          minimum: 1
+          maximum: 5
+        expectedControls:
+          type: string
+    MissionRisk:
+      allOf:
+        - $ref: '#/components/schemas/MissionRiskInput'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            level:
+              $ref: '#/components/schemas/Ref'
+    VerificationInput:
+      type: object
+      required:
+        - title
+        - riskId
+      properties:
+        version:
+          type: integer
+        riskId:
+          $ref: '#/components/schemas/Id'
+        title:
+          type: string
+          example: Contrôler la séparation saisie / validation des virements
+        testProcedure:
+          type: string
+        assigneeId:
+          $ref: '#/components/schemas/Id'
+        workPerformed:
+          type: string
+        result:
+          type: string
+          enum:
+            - SATISFACTORY
+            - UNSATISFACTORY
+            - NOT_APPLICABLE
+        conclusion:
+          type: string
+        ccmControlCode:
+          type: string
+          description: Contrôle CCM qui alimente cette vérification
+          example: SOD-VIREMENTS
+    Verification:
+      allOf:
+        - $ref: '#/components/schemas/VerificationInput'
+        - type: object
+          required:
+            - id
+            - status
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            status:
+              $ref: '#/components/schemas/Ref'
+            assignee:
+              $ref: '#/components/schemas/UserSummary'
+            findingIds:
+              type: array
+              items:
+                $ref: '#/components/schemas/Id'
+            attachments:
+              type: array
+              items:
+                $ref: '#/components/schemas/Attachment'
+            samples:
+              type: array
+              items:
+                $ref: '#/components/schemas/Sample'
+            availableActions:
+              type: array
+              items:
+                $ref: '#/components/schemas/AvailableAction'
+            meta:
+              $ref: '#/components/schemas/AuditMeta'
+    SampleRequest:
+      type: object
+      required:
+        - method
+        - populationSize
+      properties:
+        method:
+          type: string
+          enum:
+            - RANDOM
+            - SYSTEMATIC
+            - MUS
+            - STRATIFIED
+        populationSize:
+          type: integer
+          minimum: 1
+        confidenceLevel:
+          type: number
+          example: 0.95
+        tolerableErrorRate:
+          type: number
+          example: 0.05
+        seed:
+          type: integer
+          description: Graine pour la reproductibilité
+    Sample:
+      type: object
+      required:
+        - id
+        - method
+        - size
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        method:
+          type: string
+        size:
+          type: integer
+        seed:
+          type: integer
+        selectedItems:
+          type: array
+          items:
+            type: string
+        drawnAt:
+          type: string
+          format: date-time
+    WorkPaper:
+      type: object
+      required:
+        - id
+        - reference
+        - title
+        - signOffState
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        reference:
+          type: string
+          example: PT-03.2
+        title:
+          type: string
+        verificationId:
+          $ref: '#/components/schemas/Id'
+        attachment:
+          $ref: '#/components/schemas/Attachment'
+        signOffState:
+          type: string
+          enum:
+            - NOT_PREPARED
+            - PREPARED
+            - REVIEWED
+        preparedBy:
+          $ref: '#/components/schemas/UserSummary'
+        preparedAt:
+          type: string
+          format: date-time
+        reviewedBy:
+          $ref: '#/components/schemas/UserSummary'
+        reviewedAt:
+          type: string
+          format: date-time
+        meta:
+          $ref: '#/components/schemas/AuditMeta'
+    MeetingInput:
+      type: object
+      required:
+        - kind
+        - scheduledAt
+      properties:
+        version:
+          type: integer
+        kind:
+          type: string
+          enum:
+            - OPENING
+            - CHECKPOINT
+            - CLOSING
+        scheduledAt:
+          type: string
+          format: date-time
+        location:
+          type: string
+        participantIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        minutes:
+          type: string
+          description: Compte rendu
+    Meeting:
+      allOf:
+        - $ref: '#/components/schemas/MeetingInput'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            participants:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserSummary'
+            attachments:
+              type: array
+              items:
+                $ref: '#/components/schemas/Attachment'
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+    Ref:
+      type: object
+      description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: HIGH
+        label:
+          type: string
+          description: Libellé dans la langue de l'utilisateur
+          example: Élevée
+        color:
+          type: string
+          description: Token de couleur sémantique (§1.6), jamais une couleur en dur
+          example: criticality-high
+    UnitSummary:
+      type: object
+      required:
+        - id
+        - label
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+          example: DIR-RESEAU
+        label:
+          type: string
+          example: Direction du Réseau
+        typeLabel:
+          type: string
+          example: Direction
+    UserSummary:
+      type: object
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+          example: Inspecteur Un
+        positionLabel:
+          type: string
+          description: Position principale courante (libellé du tenant)
+          example: Inspecteur
+        unitLabel:
+          type: string
+          example: Département Inspection du Réseau
+    AvailableAction:
+      type: object
+      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: submit-for-review
+        label:
+          type: string
+          example: Soumettre à la revue
+        style:
+          type: string
+          enum:
+            - primary
+            - secondary
+            - danger
+          default: secondary
+        requiresComment:
+          type: boolean
+          default: false
+        requiresSignature:
+          type: boolean
+          default: false
+        requiresStepUp:
+          type: boolean
+          default: false
+          description: Authentification renforcée (acr=2) exigée
+        confirmationMessage:
+          type: string
+          description: Message de confirmation à afficher avant exécution
+    AuditMeta:
+      type: object
+      required:
+        - createdAt
+        - version
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          $ref: '#/components/schemas/UserSummary'
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          $ref: '#/components/schemas/UserSummary'
+        version:
+          type: integer
+          minimum: 0
+          description: Version pour l'écriture concurrente (409 si périmée)
+          example: 3
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    PageMeta:
+      type: object
+      required:
+        - page
+        - size
+        - totalItems
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          example: 25
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 42
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 2
+    ActionRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 4000
+        payload:
+          type: object
+          additionalProperties: true
+          description: Données propres à l'action (ex. motif de refus, destinataires).
+    SignatureRequestRef:
+      type: object
+      description: Renvoyé en 202 quand une action ouvre un circuit de signature (§2.4).
+      required:
+        - signatureRequestId
+        - status
+      properties:
+        signatureRequestId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum:
+            - PENDING
+            - COMPLETED
+            - REFUSED
+            - INVALIDATED
+            - EXPIRED
+        nextSigners:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+    HistoryEntry:
+      type: object
+      required:
+        - at
+        - actor
+        - event
+      properties:
+        at:
+          type: string
+          format: date-time
+        actor:
+          $ref: '#/components/schemas/UserSummary'
+        event:
+          $ref: '#/components/schemas/Ref'
+        fromStatus:
+          $ref: '#/components/schemas/Ref'
+        toStatus:
+          $ref: '#/components/schemas/Ref'
+        comment:
+          type: string
+    Attachment:
+      type: object
+      required:
+        - id
+        - fileName
+        - mediaType
+        - size
+        - sha256
+        - uploadedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        fileName:
+          type: string
+          example: releve-comptes-A001.pdf
+        mediaType:
+          type: string
+          example: application/pdf
+        size:
+          type: integer
+          minimum: 0
+          example: 184320
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        uploadedAt:
+          type: string
+          format: date-time
+        uploadedBy:
+          $ref: '#/components/schemas/UserSummary'
+        category:
+          $ref: '#/components/schemas/Ref'
+    FileUpload:
+      type: object
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          contentEncoding: binary
+        category:
+          type: string
+          description: Code de catégorie de pièce
+        description:
+          type: string
+          maxLength: 500
+  responses:
+    Forbidden:
+      description: Fonctionnalité non détenue sur cette portée, ou refus de séparation des tâches (code CTN-IAM-0210).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/sod-violation
+            title: Séparation des tâches
+            status: 403
+            detail: Vous avez rédigé ce constat ; sa validation doit être faite par une autre personne.
+            code: CTN-IAM-0210
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+            sodRule: NOT_CREATOR
+    Conflict:
+      description: Conflit de version (l'objet a changé) ou état incompatible avec l'action.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: Données invalides — détail par champ dans errors[].
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/validation
+            title: Données invalides
+            status: 422
+            code: CTN-AUD-0422
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+            errors:
+              - field: plannedEnd
+                code: date.before-start
+                message: La date de fin doit être postérieure à la date de début.
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NoContent:
+      description: Opération réussie, sans contenu.
