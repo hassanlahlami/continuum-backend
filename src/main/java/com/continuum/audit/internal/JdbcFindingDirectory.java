@@ -9,15 +9,14 @@ import javax.sql.DataSource;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Service;
 
 /**
  * Lecture des constats (plan §6), PostgreSQL. Le périmètre est appliqué dans la requête (§2.1.6) :
  * un constat n'est visible que si l'utilisateur détient {@code finding.read} sur son unité auditée
  * (portées {@code TENANT}/{@code UNIT}/{@code UNIT_TREE} via {@code ltree}), module {@code FINDING}
- * activé et restrictions de délégation respectées.
+ * activé et restrictions de délégation respectées. Instancié par dialecte via
+ * {@link AuditReadModelConfig}.
  */
-@Service
 public class JdbcFindingDirectory implements FindingDirectory {
 
     private static final String VISIBLE = """

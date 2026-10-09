@@ -10,16 +10,14 @@ import javax.sql.DataSource;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Service;
 
 /**
  * Lecture des missions (plan §6), PostgreSQL. Le périmètre est appliqué dans la requête (§2.1.6) :
  * une mission n'est visible que si l'utilisateur détient {@code mission.read} sur son unité
  * (portées {@code TENANT}/{@code UNIT}/{@code UNIT_TREE} via {@code ltree}), module {@code MISSION}
  * activé et restrictions de délégation respectées. Le front n'enforce rien : il affiche ce que le
- * serveur renvoie.
+ * serveur renvoie. Instancié par dialecte via {@link AuditReadModelConfig}.
  */
-@Service
 public class JdbcMissionDirectory implements MissionDirectory {
 
     private static final String VISIBLE = """
