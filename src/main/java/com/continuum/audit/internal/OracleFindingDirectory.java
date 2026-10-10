@@ -58,6 +58,17 @@ public class OracleFindingDirectory implements FindingDirectory {
 
     private static final String COUNT = "SELECT count(*) " + FROM_WHERE;
 
+    private static final String BY_MISSION = """
+            SELECT fd.id, fd.reference, fd.title, fd.status_code, fd.status_label,
+                   fd.criticality_code, fd.criticality_label, fd.source, fd.mission_id, mi.title AS mission_title,
+                   fd.created_at, fd.version
+            FROM finding fd
+            LEFT JOIN mission mi ON mi.id = fd.mission_id
+            WHERE fd.tenant_id = :tenant AND fd.mission_id = :mission
+              AND """ + " " + VISIBLE + """
+            ORDER BY fd.reference
+            """;
+
     private static final RowMapper<FindingView> MAPPER = (rs, i) -> new FindingView(
             OracleMissionDirectory.uuid(rs.getBytes("id")),
             rs.getString("reference"),
@@ -90,5 +101,14 @@ public class OracleFindingDirectory implements FindingDirectory {
         List<FindingView> items = jdbc.query(SELECT, params, MAPPER);
         Integer total = jdbc.queryForObject(COUNT, params, Integer.class);
         return new Page(items, total == null ? 0 : total);
+    }
+
+    @Override
+    public List<FindingView> listByMission(UUID tenantId, UUID userId, UUID missionId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", OracleMissionDirectory.raw(tenantId))
+                .addValue("user", OracleMissionDirectory.raw(userId))
+                .addValue("mission", OracleMissionDirectory.raw(missionId));
+        return jdbc.query(BY_MISSION, params, MAPPER);
     }
 }

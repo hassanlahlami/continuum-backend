@@ -20,4 +20,10 @@ public interface FindingDirectory {
      * @param query texte libre optionnel ({@code null} = pas de filtre)
      */
     Page searchVisible(UUID tenantId, UUID userId, String query, int page, int size);
+
+    /**
+     * Constats <strong>d'une mission</strong> visibles par l'utilisateur ({@code finding.read} sur
+     * l'unité auditée, §2.1.6). Alimente le cockpit de la mission.
+     */
+    List<FindingView> listByMission(UUID tenantId, UUID userId, UUID missionId);
 }

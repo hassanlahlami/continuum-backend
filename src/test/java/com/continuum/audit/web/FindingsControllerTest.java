@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -37,6 +38,7 @@ class FindingsControllerTest {
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID USER = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
     private static final UUID STRANGER = UUID.fromString("00000000-0000-0000-0000-0000000000cc");
+    private static final UUID MISSION_IG = UUID.fromString("f0000000-0000-0000-0000-0000000000a1");
 
     private static DataSource dataSource;
     private static FindingsController controller;
@@ -120,5 +122,16 @@ class FindingsControllerTest {
         authenticateAs(STRANGER);
         assertThat(controller.searchFindings(0, 25, null, null, null, null, null, null, null, null, null)
                 .getBody().getItems()).isEmpty();
+    }
+
+    @Test
+    void listMissionFindingsReturnsOnlyThatMissionInScope() {
+        authenticateAs(USER);
+        List<Finding> items = controller.listMissionFindings(MISSION_IG, null, null).getBody();
+        assertThat(items).singleElement()
+                .satisfies(f -> assertThat(f.getReference()).isEqualTo("CST-A001-01"));
+
+        authenticateAs(STRANGER);
+        assertThat(controller.listMissionFindings(MISSION_IG, null, null).getBody()).isEmpty();
     }
 }
