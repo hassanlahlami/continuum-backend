@@ -29,10 +29,14 @@ INSERT INTO mission(id, tenant_id, org_unit_id, reference, title, mission_type_c
   'MIS-A001', 'Inspection agence A001', 'INSPECTION', 'Inspection', 'EN_COURS', 'En cours', 'REALISATION', 'Réalisation');
 
 INSERT INTO finding(id, tenant_id, mission_id, org_unit_id, reference, title, status_code, status_label,
-                    criticality_code, criticality_label, source) VALUES
+                    criticality_code, criticality_label, source, fact, criterion, cause, consequence) VALUES
  ('11110000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'f0000000-0000-0000-0000-0000000000a1',
   'b0000000-0000-0000-0000-000000000002', 'CST-A001-01', 'Cumul saisie/validation des virements',
-  'OUVERT', 'Ouvert', 'HIGH', 'Élevée', 'CCM'),
+  'OUVERT', 'Ouvert', 'HIGH', 'Élevée', 'CCM',
+  'U003 a saisi et validé 3 virements.', 'Double validation obligatoire (§4.2).',
+  'Cumul des habilitations saisie + validation.', 'Risque de virement frauduleux non détecté.');
+INSERT INTO finding(id, tenant_id, mission_id, org_unit_id, reference, title, status_code, status_label,
+                    criticality_code, criticality_label, source) VALUES
  ('11110000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', NULL,
   'b0000000-0000-0000-0000-000000000009', 'CST-B002-01', 'Constat hors périmètre',
   'OUVERT', 'Ouvert', 'LOW', 'Faible', 'MANUAL');

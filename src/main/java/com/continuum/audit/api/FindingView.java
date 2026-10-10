@@ -19,5 +19,9 @@ public record FindingView(
         UUID missionId,
         String missionTitle,
         OffsetDateTime createdAt,
-        int version) {
+        int version,
+        String fact,
+        String criterion,
+        String cause,
+        String consequence) {
 }

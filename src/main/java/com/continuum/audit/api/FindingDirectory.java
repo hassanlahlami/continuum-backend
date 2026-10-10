@@ -1,6 +1,7 @@
 package com.continuum.audit.api;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -26,4 +27,7 @@ public interface FindingDirectory {
      * l'unité auditée, §2.1.6). Alimente le cockpit de la mission.
      */
     List<FindingView> listByMission(UUID tenantId, UUID userId, UUID missionId);
+
+    /** Le constat (détail FRAP) s'il existe dans la mission <strong>et</strong> est visible (§2.1.6). */
+    Optional<FindingView> findVisible(UUID tenantId, UUID userId, UUID missionId, UUID findingId);
 }
