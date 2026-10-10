@@ -88,11 +88,11 @@ class OracleAuditReadModelTest {
     void findingsInScopeViaClosureTable() {
         FindingDirectory directory = new OracleFindingDirectory(dataSource);
 
-        FindingDirectory.Page page = directory.searchVisible(TENANT, USER, null, 0, 25);
+        FindingDirectory.Page page = directory.searchVisible(TENANT, USER, null, null, null, 0, 25);
         assertThat(page.totalItems()).isEqualTo(1);
         assertThat(page.items()).singleElement()
                 .satisfies(f -> assertThat(f.reference()).isEqualTo("CST-A001-01"));
 
-        assertThat(directory.searchVisible(TENANT, STRANGER, null, 0, 25).items()).isEmpty();
+        assertThat(directory.searchVisible(TENANT, STRANGER, null, null, null, 0, 25).items()).isEmpty();
     }
 }

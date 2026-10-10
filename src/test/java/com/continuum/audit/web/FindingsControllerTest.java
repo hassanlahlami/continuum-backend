@@ -131,6 +131,20 @@ class FindingsControllerTest {
     }
 
     @Test
+    void sourceAndCriticalityFiltersApply() {
+        authenticateAs(USER);
+        // Le constat visible CST-A001-01 est CCM / criticité HIGH.
+        assertThat(controller.searchFindings(0, 25, null, null, null, null, null, null, null, null, "CCM")
+                .getBody().getItems()).hasSize(1);
+        assertThat(controller.searchFindings(0, 25, null, null, null, null, null, null, null, null, "MANUAL")
+                .getBody().getItems()).isEmpty();
+        assertThat(controller.searchFindings(0, 25, null, null, null, null, null, null, "HIGH", null, null)
+                .getBody().getItems()).hasSize(1);
+        assertThat(controller.searchFindings(0, 25, null, null, null, null, null, null, "LOW", null, null)
+                .getBody().getItems()).isEmpty();
+    }
+
+    @Test
     void listMissionFindingsReturnsOnlyThatMissionInScope() {
         authenticateAs(USER);
         List<Finding> items = controller.listMissionFindings(MISSION_IG, null, null).getBody();
