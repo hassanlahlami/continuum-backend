@@ -51,7 +51,7 @@ public class JdbcFindingDirectory implements FindingDirectory {
     private static final String SELECT = """
             SELECT fd.id, fd.reference, fd.title, fd.status_code, fd.status_label,
                    fd.criticality_code, fd.criticality_label, fd.source, fd.mission_id, mi.title AS mission_title,
-                   fd.created_at, fd.version
+                   fd.created_at, fd.version, fd.fact, fd.criterion, fd.cause, fd.consequence
             """ + FROM_WHERE + """
             ORDER BY fd.reference
             LIMIT :size OFFSET :offset
@@ -62,7 +62,7 @@ public class JdbcFindingDirectory implements FindingDirectory {
     private static final String BY_MISSION = """
             SELECT fd.id, fd.reference, fd.title, fd.status_code, fd.status_label,
                    fd.criticality_code, fd.criticality_label, fd.source, fd.mission_id, mi.title AS mission_title,
-                   fd.created_at, fd.version
+                   fd.created_at, fd.version, fd.fact, fd.criterion, fd.cause, fd.consequence
             FROM finding fd
             LEFT JOIN org_unit fu ON fu.id = fd.org_unit_id
             LEFT JOIN mission mi  ON mi.id = fd.mission_id
@@ -83,7 +83,11 @@ public class JdbcFindingDirectory implements FindingDirectory {
             rs.getObject("mission_id", UUID.class),
             rs.getString("mission_title"),
             rs.getObject("created_at", OffsetDateTime.class),
-            rs.getInt("version"));
+            rs.getInt("version"),
+            rs.getString("fact"),
+            rs.getString("criterion"),
+            rs.getString("cause"),
+            rs.getString("consequence"));
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -107,5 +111,14 @@ public class JdbcFindingDirectory implements FindingDirectory {
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenant", tenantId).addValue("user", userId).addValue("mission", missionId);
         return jdbc.query(BY_MISSION, params, MAPPER);
+    }
+
+    @Override
+    public java.util.Optional<FindingView> findVisible(UUID tenantId, UUID userId, UUID missionId, UUID findingId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", tenantId).addValue("user", userId)
+                .addValue("mission", missionId).addValue("finding", findingId);
+        return jdbc.query(BY_MISSION.replace("fd.mission_id = :mission", "fd.mission_id = :mission AND fd.id = :finding"),
+                params, MAPPER).stream().findFirst();
     }
 }

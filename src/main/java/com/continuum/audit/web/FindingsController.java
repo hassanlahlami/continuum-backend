@@ -10,11 +10,13 @@ import gen.app.findings.model.Ref;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Vue transverse des constats de la Plateforme Fonctionnelle (contrat {@code app/findings.yaml}, §6) :
@@ -61,12 +63,27 @@ public class FindingsController implements FindingsApi {
         return ResponseEntity.ok(items);
     }
 
+    @Override
+    public ResponseEntity<Finding> getFinding(UUID missionId, UUID findingId) {
+        Jwt jwt = currentJwt();
+        UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
+        UUID user = uuidClaim(jwt, CLAIM_USER);
+        return findings.findVisible(tenant, user, missionId, findingId)
+                .map(FindingsController::toModel)
+                .map(ResponseEntity::ok)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Constat inconnu"));
+    }
+
     private static Finding toModel(FindingView v) {
         Finding finding = new Finding(v.title(), v.id(), v.reference(),
                 new Ref(v.statusCode(), v.statusLabel()),
                 new AuditMeta(v.createdAt(), v.version()))
                 .missionId(v.missionId())
-                .missionTitle(v.missionTitle());
+                .missionTitle(v.missionTitle())
+                .fact(v.fact())
+                .criterion(v.criterion())
+                .cause(v.cause())
+                .consequence(v.consequence());
         if (v.criticalityCode() != null) {
             finding.criticality(new Ref(v.criticalityCode(), v.criticalityLabel()));
         }

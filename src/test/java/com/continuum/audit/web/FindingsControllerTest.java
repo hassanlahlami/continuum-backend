@@ -1,6 +1,7 @@
 package com.continuum.audit.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.continuum.audit.internal.JdbcFindingDirectory;
 import gen.app.findings.model.Finding;
@@ -21,12 +22,14 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.EncodedResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Vérifie {@link FindingsController} (contrat {@code app/findings.yaml}) sur base réelle : la vue
@@ -39,6 +42,8 @@ class FindingsControllerTest {
     private static final UUID USER = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
     private static final UUID STRANGER = UUID.fromString("00000000-0000-0000-0000-0000000000cc");
     private static final UUID MISSION_IG = UUID.fromString("f0000000-0000-0000-0000-0000000000a1");
+    private static final UUID FINDING_IG = UUID.fromString("11110000-0000-0000-0000-000000000001");
+    private static final UUID FINDING_OTHER = UUID.fromString("11110000-0000-0000-0000-000000000002");
 
     private static DataSource dataSource;
     private static FindingsController controller;
@@ -65,6 +70,7 @@ class FindingsControllerTest {
         run(new FileSystemResource(pg.resolve("V202609301000__entity_iam_structure.sql")));
         run(new FileSystemResource(pg.resolve("V202610091200__entity_mission.sql")));
         run(new FileSystemResource(pg.resolve("V202610091300__entity_finding.sql")));
+        run(new FileSystemResource(pg.resolve("V202610091500__finding_frap.sql")));
         run(new ClassPathResource("finding-read-seed.sql"));
 
         controller = new FindingsController(new JdbcFindingDirectory(dataSource));
@@ -133,5 +139,32 @@ class FindingsControllerTest {
 
         authenticateAs(STRANGER);
         assertThat(controller.listMissionFindings(MISSION_IG, null, null).getBody()).isEmpty();
+    }
+
+    @Test
+    void getFindingInScopeReturnsFrap() {
+        authenticateAs(USER);
+        Finding f = controller.getFinding(MISSION_IG, FINDING_IG).getBody();
+        assertThat(f).isNotNull();
+        assertThat(f.getReference()).isEqualTo("CST-A001-01");
+        assertThat(f.getFact()).contains("U003");
+        assertThat(f.getCriterion()).contains("Double validation");
+        assertThat(f.getConsequence()).contains("frauduleux");
+    }
+
+    @Test
+    void getFindingOutOfMissionIsNotFound() {
+        authenticateAs(USER);
+        assertThatThrownBy(() -> controller.getFinding(MISSION_IG, FINDING_OTHER))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void getFindingAsStrangerIsNotFound() {
+        authenticateAs(STRANGER);
+        assertThatThrownBy(() -> controller.getFinding(MISSION_IG, FINDING_IG))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 }
