@@ -46,6 +46,8 @@ public class JdbcFindingDirectory implements FindingDirectory {
             LEFT JOIN mission mi  ON mi.id = fd.mission_id
             WHERE fd.tenant_id = :tenant
               AND (CAST(:q AS text) IS NULL OR fd.reference ILIKE CAST(:q AS text) OR fd.title ILIKE CAST(:q AS text))
+              AND (CAST(:source AS text) IS NULL OR fd.source = CAST(:source AS text))
+              AND (CAST(:crit AS text) IS NULL OR fd.criticality_code = CAST(:crit AS text))
               AND """ + " " + VISIBLE;
 
     private static final String SELECT = """
@@ -96,14 +98,20 @@ public class JdbcFindingDirectory implements FindingDirectory {
     }
 
     @Override
-    public Page searchVisible(UUID tenantId, UUID userId, String query, int page, int size) {
+    public Page searchVisible(UUID tenantId, UUID userId, String query, String source, String criticality,
+            int page, int size) {
         String like = (query == null || query.isBlank()) ? null : "%" + query.strip() + "%";
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenant", tenantId).addValue("user", userId).addValue("q", like)
+                .addValue("source", blankToNull(source)).addValue("crit", blankToNull(criticality))
                 .addValue("size", size).addValue("offset", (long) page * size);
         List<FindingView> items = jdbc.query(SELECT, params, MAPPER);
         Integer total = jdbc.queryForObject(COUNT, params, Integer.class);
         return new Page(items, total == null ? 0 : total);
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     @Override

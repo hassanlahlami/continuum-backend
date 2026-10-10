@@ -45,6 +45,8 @@ public class OracleFindingDirectory implements FindingDirectory {
             LEFT JOIN mission mi ON mi.id = fd.mission_id
             WHERE fd.tenant_id = :tenant
               AND (:q IS NULL OR LOWER(fd.reference) LIKE LOWER(:q) OR LOWER(fd.title) LIKE LOWER(:q))
+              AND (:source IS NULL OR fd.source = :source)
+              AND (:crit IS NULL OR fd.criticality_code = :crit)
               AND """ + " " + VISIBLE;
 
     private static final String SELECT = """
@@ -94,17 +96,24 @@ public class OracleFindingDirectory implements FindingDirectory {
     }
 
     @Override
-    public Page searchVisible(UUID tenantId, UUID userId, String query, int page, int size) {
+    public Page searchVisible(UUID tenantId, UUID userId, String query, String source, String criticality,
+            int page, int size) {
         String like = (query == null || query.isBlank()) ? null : "%" + query.strip() + "%";
         // Type SQL explicite : Oracle ne peut pas inférer le type d'un bind null (ORA-17004).
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("tenant", OracleMissionDirectory.raw(tenantId))
                 .addValue("user", OracleMissionDirectory.raw(userId))
                 .addValue("q", like, java.sql.Types.VARCHAR)
+                .addValue("source", blankToNull(source), java.sql.Types.VARCHAR)
+                .addValue("crit", blankToNull(criticality), java.sql.Types.VARCHAR)
                 .addValue("size", size).addValue("offset", (long) page * size);
         List<FindingView> items = jdbc.query(SELECT, params, MAPPER);
         Integer total = jdbc.queryForObject(COUNT, params, Integer.class);
         return new Page(items, total == null ? 0 : total);
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     @Override

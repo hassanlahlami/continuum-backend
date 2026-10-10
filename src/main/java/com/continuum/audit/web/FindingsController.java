@@ -46,7 +46,7 @@ public class FindingsController implements FindingsApi {
         int p = page == null ? 0 : page;
         int s = size == null ? 25 : size;
 
-        FindingDirectory.Page result = findings.searchVisible(tenant, user, q, p, s);
+        FindingDirectory.Page result = findings.searchVisible(tenant, user, q, source, criticality, p, s);
         int totalPages = (int) Math.ceil(result.totalItems() / (double) s);
         List<Finding> items = result.items().stream().map(FindingsController::toModel).toList();
         return ResponseEntity.ok(new FindingPage(p, s, result.totalItems(), totalPages, items));

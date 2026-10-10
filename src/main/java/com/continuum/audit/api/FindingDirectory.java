@@ -16,11 +16,12 @@ public interface FindingDirectory {
     }
 
     /**
-     * Constats visibles de l'utilisateur, filtrés par {@code query} (référence ou titre) et paginés.
-     *
-     * @param query texte libre optionnel ({@code null} = pas de filtre)
+     * Constats visibles de l'utilisateur, filtrés par {@code query} (référence ou titre), {@code source}
+     * ({@code MANUAL}/{@code CCM}) et {@code criticality} (code), paginés. Tout filtre {@code null} est
+     * ignoré.
      */
-    Page searchVisible(UUID tenantId, UUID userId, String query, int page, int size);
+    Page searchVisible(UUID tenantId, UUID userId, String query, String source, String criticality,
+            int page, int size);
 
     /**
      * Constats <strong>d'une mission</strong> visibles par l'utilisateur ({@code finding.read} sur
