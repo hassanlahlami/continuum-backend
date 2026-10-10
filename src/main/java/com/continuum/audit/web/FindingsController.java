@@ -50,6 +50,17 @@ public class FindingsController implements FindingsApi {
         return ResponseEntity.ok(new FindingPage(p, s, result.totalItems(), totalPages, items));
     }
 
+    @Override
+    public ResponseEntity<List<Finding>> listMissionFindings(UUID missionId, List<String> status,
+            String criticality) {
+        Jwt jwt = currentJwt();
+        UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
+        UUID user = uuidClaim(jwt, CLAIM_USER);
+        List<Finding> items = findings.listByMission(tenant, user, missionId).stream()
+                .map(FindingsController::toModel).toList();
+        return ResponseEntity.ok(items);
+    }
+
     private static Finding toModel(FindingView v) {
         Finding finding = new Finding(v.title(), v.id(), v.reference(),
                 new Ref(v.statusCode(), v.statusLabel()),
