@@ -51,6 +51,21 @@ INSERT INTO finding(id, tenant_id, mission_id, org_unit_id, reference, title, st
   'U003 a saisi et validé 3 virements.', 'Double validation obligatoire.',
   'Cumul des habilitations.', 'Risque de fraude.');
 
+-- Utilisateur ee : droit de validation par la PORTÉE D'UNITÉ (position organisationnelle VALIDATEUR,
+-- finding.validate en UNIT_TREE sur IG), SANS appartenance à l'équipe de mission — reproduit le flux
+-- de démo où l'Admin Système octroie la position VALIDATEUR à l'inspecteur.
+INSERT INTO role(id, tenant_id, code, label, kind) VALUES
+ ('c0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'VALIDATEUR_ORG', '{"fr":"Valideur"}', 'ORGANISATIONAL');
+INSERT INTO role_feature(role_id, feature_code) VALUES
+ ('c0000000-0000-0000-0000-000000000002', 'finding.read'),
+ ('c0000000-0000-0000-0000-000000000002', 'finding.validate');
+INSERT INTO position(id, tenant_id, code, label, rank, scope) VALUES
+ ('d0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'VALIDATEUR', '{"fr":"Valideur"}', 40, 'UNIT_TREE');
+INSERT INTO position_role(position_id, role_id) VALUES
+ ('d0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000002');
+INSERT INTO assignment(id, tenant_id, user_id, position_id, org_unit_id, kind, valid_from) VALUES
+ ('e0000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000ee', 'd0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000002', 'HOLDER', CURRENT_DATE);
+
 -- Règle SoD dynamique : on ne valide pas un constat qu'on a écrit (même objet, §2.2).
 INSERT INTO sod_rule(id, tenant_id, feature_a, feature_b, type, severity) VALUES
  ('d1d1d1d1-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'finding.write', 'finding.validate', 'DYNAMIC', 'BLOCK');

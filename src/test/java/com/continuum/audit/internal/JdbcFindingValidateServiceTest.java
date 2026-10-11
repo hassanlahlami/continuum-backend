@@ -44,6 +44,7 @@ class JdbcFindingValidateServiceTest {
     private static final UUID VALIDATOR = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
     private static final UUID READER = UUID.fromString("00000000-0000-0000-0000-0000000000cc");
     private static final UUID STRANGER = UUID.fromString("00000000-0000-0000-0000-0000000000dd");
+    private static final UUID UNIT_VALIDATOR = UUID.fromString("00000000-0000-0000-0000-0000000000ee");
     private static final UUID MISSION = UUID.fromString("f0000000-0000-0000-0000-0000000000a1");
     private static final UUID FINDING = UUID.fromString("11110000-0000-0000-0000-000000000001");
 
@@ -139,5 +140,34 @@ class JdbcFindingValidateServiceTest {
     void rejectsStaleVersion() {
         assertThatExceptionOfType(StaleFindingException.class).isThrownBy(() -> service().validate(
                 new ValidateFindingCommand(TENANT, VALIDATOR, MISSION, FINDING, 5, null)));
+    }
+
+    @Test
+    void validatesViaUnitScopedPermission() {
+        // ee détient finding.validate par la portée d'unité (position VALIDATEUR), sans équipe de mission.
+        assertThat(service().availableActions(TENANT, UNIT_VALIDATOR, MISSION, load(UNIT_VALIDATOR)))
+                .containsExactly("validate");
+        FindingView result = service().validate(
+                new ValidateFindingCommand(TENANT, UNIT_VALIDATOR, MISSION, FINDING, 0, null));
+        assertThat(result.statusCode()).isEqualTo("VALIDATED");
+    }
+
+    @Test
+    void offersValidateOnlyToEligibleUsers() {
+        assertThat(service().availableActions(TENANT, VALIDATOR, MISSION, load(VALIDATOR)))
+                .containsExactly("validate");
+        // L'auteur est écarté par la SoD dynamique ; le lecteur n'a pas le droit sur la mission.
+        assertThat(service().availableActions(TENANT, AUTHOR, MISSION, load(AUTHOR))).isEmpty();
+        assertThat(service().availableActions(TENANT, READER, MISSION, load(READER))).isEmpty();
+    }
+
+    @Test
+    void withdrawsValidateOnceValidated() {
+        service().validate(new ValidateFindingCommand(TENANT, VALIDATOR, MISSION, FINDING, 0, null));
+        assertThat(service().availableActions(TENANT, VALIDATOR, MISSION, load(VALIDATOR))).isEmpty();
+    }
+
+    private static FindingView load(UUID user) {
+        return new JdbcFindingDirectory(dataSource).findVisible(TENANT, user, MISSION, FINDING).orElseThrow();
     }
 }

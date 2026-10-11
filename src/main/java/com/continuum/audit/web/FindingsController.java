@@ -11,6 +11,7 @@ import com.continuum.audit.api.FindingView;
 import gen.app.findings.api.FindingsApi;
 import gen.app.findings.model.ActionRequest;
 import gen.app.findings.model.AuditMeta;
+import gen.app.findings.model.AvailableAction;
 import gen.app.findings.model.Finding;
 import gen.app.findings.model.FindingPage;
 import gen.app.findings.model.Ref;
@@ -79,10 +80,20 @@ public class FindingsController implements FindingsApi {
         Jwt jwt = currentJwt();
         UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
         UUID user = uuidClaim(jwt, CLAIM_USER);
-        return findings.findVisible(tenant, user, missionId, findingId)
-                .map(FindingsController::toModel)
-                .map(ResponseEntity::ok)
+        FindingView view = findings.findVisible(tenant, user, missionId, findingId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Constat inconnu"));
+        Finding model = toModel(view)
+                .availableActions(toActions(findingActions.availableActions(tenant, user, missionId, view)));
+        return ResponseEntity.ok(model);
+    }
+
+    /** Traduit les codes d'action décidés par le serveur en actions présentables (libellé, style). */
+    private static List<AvailableAction> toActions(List<String> codes) {
+        return codes.stream().map(code -> switch (code) {
+            case FindingActionService.ACTION_VALIDATE ->
+                new AvailableAction(code, "Valider").style(AvailableAction.StyleEnum.PRIMARY);
+            default -> new AvailableAction(code, code);
+        }).toList();
     }
 
     /**
