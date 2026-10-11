@@ -33,7 +33,12 @@ class CbsConnectionConfig {
     }
 
     @Bean
-    PopulationControlMonitoring populationControlMonitoring(CcmPopulationGateway gateway, DataSource platformDataSource) {
-        return new JdbcPopulationControlMonitoring(gateway, platformDataSource);
+    PopulationControlMonitoring populationControlMonitoring(CcmPopulationGateway gateway,
+            DataSource platformDataSource,
+            @Value("${continuum.db.dialect:postgresql}") String dialect) {
+        // Le CBS est toujours Oracle (D3) ; l'écriture des constats vise la base PLATEFORME (PG ou Oracle).
+        return "oracle".equalsIgnoreCase(dialect)
+                ? new OraclePopulationControlMonitoring(gateway, platformDataSource)
+                : new JdbcPopulationControlMonitoring(gateway, platformDataSource);
     }
 }
