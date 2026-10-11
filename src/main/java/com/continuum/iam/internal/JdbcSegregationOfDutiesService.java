@@ -9,16 +9,15 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Service;
 
 /**
- * Implémentation PostgreSQL de {@link SegregationOfDutiesService} (plan §2.1.8, §2.2).
+ * Implémentation PostgreSQL de {@link SegregationOfDutiesService} (plan §2.1.8, §2.2). Le bean est
+ * sélectionné par dialecte dans {@link SegregationOfDutiesConfig} (variante Oracle : table de fermeture).
  *
  * <p>Calcule les fonctionnalités effectivement détenues par l'utilisateur sur l'unité (même logique
  * que le moteur {@code can()}, §2.1.6), puis retourne les règles {@code sod_rule} de type
  * {@code STATIC} dont les deux fonctionnalités sont détenues simultanément.
  */
-@Service
 public class JdbcSegregationOfDutiesService implements SegregationOfDutiesService {
 
     private static final String STATIC_CONFLICTS_SQL = """

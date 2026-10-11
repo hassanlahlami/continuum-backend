@@ -13,16 +13,15 @@ import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Validation d'un constat (plan §2.1.4, §2.2), PostgreSQL. Le serveur décide : visibilité et droit
  * ({@link AuthorizationService}), SoD dynamique ({@link SegregationOfDutiesService}), puis transition
  * de statut et journalisation signée ({@link AuditTrailService}, §2.3). Tout se joue dans une seule
- * transaction : un conflit annule l'écriture.
+ * transaction : un conflit annule l'écriture. Le bean est sélectionné par dialecte dans
+ * {@link FindingActionConfig} (variante Oracle : {@code RAW(16)}).
  */
-@Service
 public class JdbcFindingActionService implements FindingActionService {
 
     private static final String FEATURE_VALIDATE = "finding.validate";
