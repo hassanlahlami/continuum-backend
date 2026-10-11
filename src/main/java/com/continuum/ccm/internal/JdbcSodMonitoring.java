@@ -5,7 +5,6 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -16,9 +15,9 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code finding(tenant_id, reference)} rend le contrôle idempotent : le relancer ne duplique rien.
  *
  * <p>Écrit dans la table {@code finding} du module {@code audit} au niveau base (pas de dépendance de
- * code entre modules) ; une API d'écriture de constat côté {@code audit} est un raffinement ultérieur.
+ * code entre modules). Le bean est sélectionné par dialecte dans {@link SodMonitoringConfig}
+ * (variante Oracle : {@code MERGE}, {@code RAW(16)}).
  */
-@Service
 public class JdbcSodMonitoring implements SodMonitoring {
 
     private static final String SQL = """
