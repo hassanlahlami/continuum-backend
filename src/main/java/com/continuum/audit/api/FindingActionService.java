@@ -11,6 +11,18 @@ import java.util.UUID;
  */
 public interface FindingActionService {
 
+    /** Code d'action (contrat {@code actionCode}) : validation d'un constat. */
+    String ACTION_VALIDATE = "validate";
+
+    /**
+     * Codes des actions que l'utilisateur courant peut exécuter <strong>maintenant</strong> sur ce constat
+     * (plan §2.1.4 ; alimente {@code availableActions}). Le front n'en déduit aucun droit : il n'affiche
+     * que ce que le serveur renvoie.
+     *
+     * @return les codes d'action disponibles (ex. {@link #ACTION_VALIDATE}), vide si aucune
+     */
+    List<String> availableActions(UUID tenantId, UUID userId, UUID missionId, FindingView finding);
+
     /**
      * Valide un constat visible dans la mission.
      *
@@ -53,10 +65,10 @@ public interface FindingActionService {
         }
     }
 
-    /** L'utilisateur n'a pas la fonctionnalité {@code finding.validate} sur la mission (§2.1.6) → 403. */
+    /** L'utilisateur n'a pas {@code finding.validate} (ni par l'unité, ni par l'équipe de mission, §2.1.6) → 403. */
     class ActionNotPermittedException extends RuntimeException {
         public ActionNotPermittedException() {
-            super("Validation refusée : fonctionnalité finding.validate absente sur la mission (§2.1.6).");
+            super("Validation refusée : fonctionnalité finding.validate absente sur ce constat (§2.1.6).");
         }
     }
 
