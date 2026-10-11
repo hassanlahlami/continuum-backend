@@ -3,7 +3,11 @@ package com.continuum.audit.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.continuum.audit.internal.JdbcFindingActionService;
 import com.continuum.audit.internal.JdbcFindingDirectory;
+import com.continuum.audittrail.internal.JdbcAuditTrailService;
+import com.continuum.iam.internal.JdbcAuthorizationService;
+import com.continuum.iam.internal.JdbcSegregationOfDutiesService;
 import gen.app.findings.model.Finding;
 import gen.app.findings.model.FindingPage;
 import java.nio.charset.StandardCharsets;
@@ -73,7 +77,12 @@ class FindingsControllerTest {
         run(new FileSystemResource(pg.resolve("V202610091500__finding_frap.sql")));
         run(new ClassPathResource("finding-read-seed.sql"));
 
-        controller = new FindingsController(new JdbcFindingDirectory(dataSource));
+        JdbcFindingDirectory directory = new JdbcFindingDirectory(dataSource);
+        JdbcAuditTrailService audit = new JdbcAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8));
+        JdbcFindingActionService actions = new JdbcFindingActionService(dataSource, directory,
+                new JdbcAuthorizationService(dataSource),
+                new JdbcSegregationOfDutiesService(dataSource, audit), audit);
+        controller = new FindingsController(directory, actions);
     }
 
     private static void run(Resource script) {
