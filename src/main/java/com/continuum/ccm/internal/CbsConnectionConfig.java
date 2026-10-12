@@ -15,7 +15,8 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
  *
  * <p>La source de données CBS est <strong>interne</strong> au connecteur (pas un bean {@code DataSource}) :
  * la source plateforme auto-configurée reste la seule injectée par type, sans ambiguïté. Le connecteur
- * lit le CBS (Oracle) ; {@link PopulationControlMonitoring} écrit les constats dans la base plateforme.
+ * lit le CBS (Oracle) ; {@link PopulationControlMonitoring} écrit les exceptions (D34) dans la base
+ * plateforme.
  */
 @Configuration
 @ConditionalOnProperty(prefix = "continuum.cbs", name = "url")
@@ -35,10 +36,11 @@ class CbsConnectionConfig {
     @Bean
     PopulationControlMonitoring populationControlMonitoring(CcmPopulationGateway gateway,
             DataSource platformDataSource,
-            @Value("${continuum.db.dialect:postgresql}") String dialect) {
-        // Le CBS est toujours Oracle (D3) ; l'écriture des constats vise la base PLATEFORME (PG ou Oracle).
+            @Value("${continuum.db.dialect:postgresql}") String dialect,
+            @Value("${continuum.cbs.data-source-label:CBS (JDBC, vues V_AUDIT_*)}") String dataSourceLabel) {
+        // Le CBS est toujours Oracle (D3) ; l'écriture des exceptions vise la base PLATEFORME (PG ou Oracle).
         return "oracle".equalsIgnoreCase(dialect)
-                ? new OraclePopulationControlMonitoring(gateway, platformDataSource)
-                : new JdbcPopulationControlMonitoring(gateway, platformDataSource);
+                ? new OraclePopulationControlMonitoring(gateway, platformDataSource, dataSourceLabel)
+                : new JdbcPopulationControlMonitoring(gateway, platformDataSource, dataSourceLabel);
     }
 }

@@ -16,8 +16,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Exécution <strong>continue</strong> des contrôles CCM (plan §5) : périodiquement, pour chaque tenant
- * actif, les contrôles tournent et matérialisent leurs détections en constats (idempotent). C'est ce
- * qui rend le monitoring « continu » plutôt qu'un simple audit ponctuel.
+ * actif, les contrôles tournent et matérialisent leurs détections en <strong>exceptions</strong>
+ * (idempotent, D34 — jamais directement en constats). C'est ce qui rend le monitoring « continu »
+ * plutôt qu'un simple audit ponctuel.
  *
  * <p>Deux familles : le cumul SoD interne ({@link SodMonitoring}, toujours actif) et les contrôles sur
  * population CBS ({@link PopulationControlMonitoring}, actifs seulement si un CBS est configuré —
@@ -52,7 +53,7 @@ class CcmScheduler {
         for (Tenant tenant : tenancy.listActive()) {
             int created = sodMonitoring.detectCumuls(tenant.id());
             if (created > 0) {
-                log.info("CCM SoD : {} nouveau(x) constat(s) pour le tenant {}", created, tenant.code());
+                log.info("CCM SoD : {} nouvelle(s) exception(s) pour le tenant {}", created, tenant.code());
             }
         }
     }
@@ -74,14 +75,14 @@ class CcmScheduler {
             for (CcmControl control : controlDirectory.activeControls(tenant.id())) {
                 int created = switch (control.code()) {
                     case CcmCriteriaMapper.CONTROL_DORMANT -> monitoring.recordDormantExceptions(
-                            tenant.id(), CcmCriteriaMapper.dormant(control, from, to),
+                            tenant.id(), control.code(), CcmCriteriaMapper.dormant(control, from, to),
                             CcmCriteriaMapper.largeOutflow(control));
                     case CcmCriteriaMapper.CONTROL_OUT_OF_BOUNDS -> monitoring.recordOutOfBoundsExceptions(
-                            tenant.id(), CcmCriteriaMapper.outOfBounds(control, from, to));
+                            tenant.id(), control.code(), CcmCriteriaMapper.outOfBounds(control, from, to));
                     default -> 0;
                 };
                 if (created > 0) {
-                    log.info("CCM {} : {} nouveau(x) constat(s) pour le tenant {}",
+                    log.info("CCM {} : {} nouvelle(s) exception(s) pour le tenant {}",
                             control.code(), created, tenant.code());
                 }
             }

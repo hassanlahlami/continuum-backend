@@ -28,9 +28,9 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /**
  * Vérifie, sur une vraie base Oracle (D4), la chaîne CCM population <strong>de bout en bout</strong> :
- * lecture des vues CBS {@code V_AUDIT_*} (connecteur) puis écriture idempotente des constats
- * {@code source=CCM} dans la table {@code finding} de la plateforme — à parité avec PostgreSQL.
- * Activé seulement si {@code -Dit.oracle.url=jdbc:oracle:…}.
+ * lecture des vues CBS {@code V_AUDIT_*} (connecteur) puis écriture idempotente des
+ * <strong>exceptions</strong> ({@code ccm_exception}, D34 — jamais de constat) dans la plateforme — à
+ * parité avec PostgreSQL. Activé seulement si {@code -Dit.oracle.url=jdbc:oracle:…}.
  */
 @EnabledIfSystemProperty(named = "it.oracle.url", matches = "jdbc:oracle:.+")
 class OraclePopulationControlMonitoringTest {
@@ -70,12 +70,13 @@ class OraclePopulationControlMonitoringTest {
         run(new FileSystemResource(oracle.resolve("V202610091200__entity_mission.sql")));
         run(new FileSystemResource(oracle.resolve("V202610091300__entity_finding.sql")));
         run(new FileSystemResource(oracle.resolve("V202610091500__finding_frap.sql")));
+        run(new FileSystemResource(oracle.resolve("V202610121000__ccm_exception.sql")));
         run(new ClassPathResource("amplitude-cbs-seed.sql"));
     }
 
     @BeforeEach
-    void clearFindings() {
-        jt.update("DELETE FROM finding WHERE source = 'CCM'");
+    void clearExceptions() {
+        jt.update("DELETE FROM ccm_exception");
     }
 
     private static void run(Resource script) {
@@ -87,36 +88,45 @@ class OraclePopulationControlMonitoringTest {
     }
 
     private static OraclePopulationControlMonitoring monitoring() {
-        return new OraclePopulationControlMonitoring(new OracleCcmPopulationGateway(dataSource), dataSource);
+        return new OraclePopulationControlMonitoring(
+                new OracleCcmPopulationGateway(dataSource), dataSource, "amplitude-test (JDBC)");
     }
 
     @Test
-    void writesDormantFindingFromCbsEndToEnd() {
-        int created = monitoring().recordDormantExceptions(TENANT,
+    void writesDormantExceptionFromCbsEndToEnd() {
+        int created = monitoring().recordDormantExceptions(TENANT, "COMPTES-DORMANTS",
                 new DormantAccountCriteria(12, new BigDecimal("10000"), List.of(), FROM, TO),
                 new BigDecimal("100000"));
         assertThat(created).isEqualTo(1);
-        assertThat(jt.queryForObject("SELECT source FROM finding WHERE reference = 'CCM-DORM-5'", String.class))
-                .isEqualTo("CCM");
-        assertThat(jt.queryForObject("SELECT criticality_code FROM finding WHERE reference = 'CCM-DORM-5'",
+        // D34 : exception à trier, aucun constat créé automatiquement.
+        assertThat(jt.queryForObject("SELECT count(*) FROM finding WHERE reference = 'CCM-DORM-5'", Integer.class))
+                .isZero();
+        assertThat(jt.queryForObject("SELECT status_code FROM ccm_exception WHERE reference = 'CCM-DORM-5'",
+                String.class)).isEqualTo("NEW");
+        assertThat(jt.queryForObject("SELECT criticality_code FROM ccm_exception WHERE reference = 'CCM-DORM-5'",
                 String.class)).isEqualTo("HIGH");
+        // Chaîne de preuve : enregistrement source du CBS porté par l'exception (§5.3).
+        assertThat(jt.queryForObject("SELECT JSON_VALUE(source_record, '$.accountId') FROM ccm_exception "
+                + "WHERE reference = 'CCM-DORM-5'", String.class)).isEqualTo("A002000000003");
     }
 
     @Test
-    void writesOutOfBoundsFindingFromCbsEndToEnd() {
-        int created = monitoring().recordOutOfBoundsExceptions(TENANT,
+    void writesOutOfBoundsExceptionFromCbsEndToEnd() {
+        int created = monitoring().recordOutOfBoundsExceptions(TENANT, "SEUIL-HORAIRE",
                 new OutOfBoundsCriteria(new BigDecimal("1000000"), List.of("SAT", "SUN"), 2, List.of("BATCH"), FROM, TO));
         assertThat(created).isEqualTo(1);
-        assertThat(jt.queryForObject("SELECT criticality_code FROM finding WHERE reference = 'CCM-OOB-4'",
+        assertThat(jt.queryForObject("SELECT criticality_code FROM ccm_exception WHERE reference = 'CCM-OOB-4'",
                 String.class)).isEqualTo("HIGH");
     }
 
     @Test
     void isIdempotent() {
         var crit = new DormantAccountCriteria(12, new BigDecimal("10000"), List.of(), FROM, TO);
-        assertThat(monitoring().recordDormantExceptions(TENANT, crit, new BigDecimal("100000"))).isEqualTo(1);
-        assertThat(monitoring().recordDormantExceptions(TENANT, crit, new BigDecimal("100000"))).isEqualTo(0);
-        assertThat(jt.queryForObject("SELECT count(*) FROM finding WHERE reference = 'CCM-DORM-5'", Integer.class))
+        assertThat(monitoring().recordDormantExceptions(TENANT, "COMPTES-DORMANTS", crit, new BigDecimal("100000")))
                 .isEqualTo(1);
+        assertThat(monitoring().recordDormantExceptions(TENANT, "COMPTES-DORMANTS", crit, new BigDecimal("100000")))
+                .isEqualTo(0);
+        assertThat(jt.queryForObject("SELECT count(*) FROM ccm_exception WHERE reference = 'CCM-DORM-5'",
+                Integer.class)).isEqualTo(1);
     }
 }

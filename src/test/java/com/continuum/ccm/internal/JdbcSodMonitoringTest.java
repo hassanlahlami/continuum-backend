@@ -23,8 +23,9 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /**
  * Vérifie le contrôle CCM de cumul SoD (plan §5) sur base réelle : un utilisateur détenant deux
- * fonctionnalités d'une règle {@code STATIC}/{@code BLOCK} donne un constat (source {@code CCM}), et le
- * contrôle est <strong>idempotent</strong>. Base via {@code -Dit.db.url}.
+ * fonctionnalités d'une règle {@code STATIC}/{@code BLOCK} donne une <strong>exception</strong>
+ * ({@code ccm_exception}, D34 — pas de constat), et le contrôle est <strong>idempotent</strong>. Base via
+ * {@code -Dit.db.url}.
  */
 class JdbcSodMonitoringTest {
 
@@ -57,6 +58,7 @@ class JdbcSodMonitoringTest {
         run(new FileSystemResource(pg.resolve("V202610091200__entity_mission.sql")));
         run(new FileSystemResource(pg.resolve("V202610091300__entity_finding.sql")));
         run(new FileSystemResource(pg.resolve("V202610091500__finding_frap.sql")));
+        run(new FileSystemResource(pg.resolve("V202610121000__ccm_exception.sql")));
         run(new ClassPathResource("iam-sod-seed.sql")); // user aa détient write+validate+review ; règle BLOCK write/validate
 
         monitoring = new JdbcSodMonitoring(dataSource);
@@ -71,20 +73,26 @@ class JdbcSodMonitoringTest {
     }
 
     @Test
-    void createsOneCcmFindingPerCumulThenIsIdempotent() {
+    void createsOneCcmExceptionPerCumulThenIsIdempotent() {
         int created = monitoring.detectCumuls(TENANT);
         assertThat(created).isEqualTo(1);
 
+        // D34 : le contrôle écrit une exception à trier, jamais un constat.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM finding WHERE tenant_id = ?", Integer.class, TENANT))
+                .isZero();
         assertThat(jdbc.queryForObject(
-                "SELECT count(*) FROM finding WHERE tenant_id = ? AND source = 'CCM' AND reference LIKE 'CCM-SOD-%'",
+                "SELECT count(*) FROM ccm_exception WHERE tenant_id = ? AND control_code = 'SOD-CUMUL' "
+                + "AND status_code = 'NEW' AND reference LIKE 'CCM-SOD-%'",
                 Integer.class, TENANT)).isEqualTo(1);
-        assertThat(jdbc.queryForObject(
-                "SELECT title FROM finding WHERE source = 'CCM'", String.class))
+        assertThat(jdbc.queryForObject("SELECT title FROM ccm_exception WHERE tenant_id = ?", String.class, TENANT))
                 .contains("finding.write").contains("finding.validate");
+        // Chaîne de preuve : le cumul détecté est porté par l'exception (§5.3).
+        assertThat(jdbc.queryForObject("SELECT source_record->>'featureA' FROM ccm_exception WHERE tenant_id = ?",
+                String.class, TENANT)).isEqualTo("finding.write");
 
-        // Idempotent : relancer le contrôle ne recrée pas le constat.
+        // Idempotent : relancer le contrôle ne recrée pas l'exception.
         assertThat(monitoring.detectCumuls(TENANT)).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM finding WHERE source = 'CCM'", Integer.class))
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM ccm_exception WHERE tenant_id = ?", Integer.class, TENANT))
                 .isEqualTo(1);
     }
 }
