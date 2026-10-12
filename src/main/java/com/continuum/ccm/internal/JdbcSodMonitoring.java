@@ -11,12 +11,14 @@ import org.springframework.transaction.annotation.Transactional;
  * Contrôle CCM de cumul SoD (plan §5), PostgreSQL. Un seul {@code INSERT … SELECT … ON CONFLICT DO
  * NOTHING} : il calcule les fonctionnalités détenues par utilisateur (même logique que §2.1.6), joint
  * les règles {@code STATIC}/{@code BLOCK} dont les deux fonctionnalités sont détenues par le même
- * utilisateur, et crée un constat (source {@code CCM}) par cumul. La contrainte d'unicité
- * {@code finding(tenant_id, reference)} rend le contrôle idempotent : le relancer ne duplique rien.
+ * utilisateur, et crée une <strong>exception</strong> (table {@code ccm_exception}, D34) par cumul. La
+ * contrainte d'unicité {@code ccm_exception(tenant_id, reference)} rend le contrôle idempotent : le
+ * relancer ne duplique rien.
  *
- * <p>Écrit dans la table {@code finding} du module {@code audit} au niveau base (pas de dépendance de
- * code entre modules). Le bean est sélectionné par dialecte dans {@link SodMonitoringConfig}
- * (variante Oracle : {@code MERGE}, {@code RAW(16)}).
+ * <p>Audit par exception (D34, §5.3) : aucun constat n'est créé ; l'exception porte sa chaîne de preuve
+ * ({@code source_record} = cumul détecté, {@code parameters_used} = règle appliquée). Le bean est
+ * sélectionné par dialecte dans {@link SodMonitoringConfig} (variante Oracle : {@code MERGE},
+ * {@code RAW(16)}, {@code JSON_OBJECT}).
  */
 public class JdbcSodMonitoring implements SodMonitoring {
 
@@ -33,15 +35,19 @@ public class JdbcSodMonitoring implements SodMonitoring {
               WHERE a.tenant_id = :tenant
                 AND CURRENT_DATE >= a.valid_from AND (a.valid_to IS NULL OR CURRENT_DATE <= a.valid_to)
             )
-            INSERT INTO finding (id, tenant_id, mission_id, org_unit_id, reference, title,
-                                 status_code, status_label, criticality_code, criticality_label, source,
-                                 fact, criterion)
-            SELECT gen_random_uuid(), :tenant, NULL, MIN(ua.unit_id::text)::uuid,
+            INSERT INTO ccm_exception (id, tenant_id, control_code, org_unit_id, reference, title,
+                                       criticality_code, criticality_label, fact, criterion,
+                                       source_record, parameters_used, data_source)
+            SELECT gen_random_uuid(), :tenant, 'SOD-CUMUL', MIN(ua.unit_id::text)::uuid,
                    'CCM-SOD-' || left(r.id::text, 8) || '-' || left(ua.user_id::text, 8),
                    'Cumul SoD : ' || r.feature_a || ' + ' || r.feature_b,
-                   'OUVERT', 'Ouvert', 'HIGH', 'Élevée', 'CCM',
+                   'HIGH', 'Élevée',
                    'L''utilisateur détient simultanément ' || r.feature_a || ' et ' || r.feature_b || '.',
-                   'Règle SoD (§2.2) : ces deux fonctionnalités ne doivent pas être cumulées.'
+                   'Règle SoD (§2.2) : ces deux fonctionnalités ne doivent pas être cumulées.',
+                   jsonb_build_object('userId', ua.user_id::text, 'ruleId', r.id::text,
+                                      'featureA', r.feature_a, 'featureB', r.feature_b),
+                   jsonb_build_object('ruleType', 'STATIC', 'severity', 'BLOCK'),
+                   'Base plateforme (habilitations)'
             FROM sod_rule r
             JOIN user_feature ua ON ua.code = r.feature_a
             JOIN user_feature ub ON ub.code = r.feature_b AND ub.user_id = ua.user_id

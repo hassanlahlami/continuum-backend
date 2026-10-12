@@ -22,8 +22,9 @@ import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /**
  * Vérifie le contrôle CCM de cumul SoD (§5) sur une vraie base Oracle (D4) : un cumul {@code STATIC}/
- * {@code BLOCK} donne un constat (source {@code CCM}), idempotent via {@code MERGE} — à parité avec
- * PostgreSQL ({@link JdbcSodMonitoringTest}). Activé seulement si {@code -Dit.oracle.url=jdbc:oracle:…}.
+ * {@code BLOCK} donne une <strong>exception</strong> ({@code ccm_exception}, D34 — pas de constat),
+ * idempotente via {@code MERGE} — à parité avec PostgreSQL ({@link JdbcSodMonitoringTest}). Activé
+ * seulement si {@code -Dit.oracle.url=jdbc:oracle:…}.
  */
 @EnabledIfSystemProperty(named = "it.oracle.url", matches = "jdbc:oracle:.+")
 class OracleSodMonitoringTest {
@@ -62,6 +63,7 @@ class OracleSodMonitoringTest {
         run(new FileSystemResource(oracle.resolve("V202610091200__entity_mission.sql")));
         run(new FileSystemResource(oracle.resolve("V202610091300__entity_finding.sql")));
         run(new FileSystemResource(oracle.resolve("V202610091500__finding_frap.sql")));
+        run(new FileSystemResource(oracle.resolve("V202610121000__ccm_exception.sql")));
         run(new ClassPathResource("iam-sod-oracle-seed.sql"));
 
         monitoring = new OracleSodMonitoring(dataSource);
@@ -76,19 +78,23 @@ class OracleSodMonitoringTest {
     }
 
     @Test
-    void createsOneCcmFindingPerCumulThenIsIdempotent() {
+    void createsOneCcmExceptionPerCumulThenIsIdempotent() {
         int created = monitoring.detectCumuls(TENANT);
         assertThat(created).isEqualTo(1);
 
+        // D34 : exception à trier, aucun constat créé.
+        assertThat(jt.queryForObject("SELECT count(*) FROM finding", Integer.class)).isZero();
         assertThat(jt.queryForObject(
-                "SELECT count(*) FROM finding WHERE source = 'CCM' AND reference LIKE 'CCM-SOD-%'", Integer.class))
-                .isEqualTo(1);
-        assertThat(jt.queryForObject("SELECT title FROM finding WHERE source = 'CCM'", String.class))
+                "SELECT count(*) FROM ccm_exception WHERE control_code = 'SOD-CUMUL' AND status_code = 'NEW' "
+                + "AND reference LIKE 'CCM-SOD-%'", Integer.class)).isEqualTo(1);
+        assertThat(jt.queryForObject("SELECT title FROM ccm_exception", String.class))
                 .contains("finding.write").contains("finding.validate");
+        // Chaîne de preuve portée par l'exception (§5.3).
+        assertThat(jt.queryForObject("SELECT JSON_VALUE(source_record, '$.featureA') FROM ccm_exception",
+                String.class)).isEqualTo("finding.write");
 
-        // Idempotent : le MERGE ne recrée pas le constat.
+        // Idempotent : le MERGE ne recrée pas l'exception.
         assertThat(monitoring.detectCumuls(TENANT)).isZero();
-        assertThat(jt.queryForObject("SELECT count(*) FROM finding WHERE source = 'CCM'", Integer.class))
-                .isEqualTo(1);
+        assertThat(jt.queryForObject("SELECT count(*) FROM ccm_exception", Integer.class)).isEqualTo(1);
     }
 }

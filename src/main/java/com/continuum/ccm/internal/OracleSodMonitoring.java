@@ -11,13 +11,14 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Contrôle CCM de cumul SoD (plan §5) — implémentation <strong>Oracle</strong> (D4), à parité avec
  * {@link JdbcSodMonitoring}. Même logique (fonctionnalités détenues par utilisateur × règles
- * {@code STATIC}/{@code BLOCK}) ; spécifique au dialecte : idempotence par {@code MERGE} (pas
- * d'{@code ON CONFLICT}), {@code id} via {@code SYS_GUID()}, UUID en {@code RAW(16)}.
+ * {@code STATIC}/{@code BLOCK}) ; crée une <strong>exception</strong> (table {@code ccm_exception}, D34)
+ * par cumul. Spécifique au dialecte : idempotence par {@code MERGE} (pas d'{@code ON CONFLICT}),
+ * {@code id} via {@code SYS_GUID()}, UUID en {@code RAW(16)}, JSON via {@code JSON_OBJECT}.
  */
 public class OracleSodMonitoring implements SodMonitoring {
 
     private static final String SQL = """
-            MERGE INTO finding d
+            MERGE INTO ccm_exception d
             USING (
               WITH user_feature AS (
                 SELECT DISTINCT a.user_id, rf.feature_code AS code, a.org_unit_id AS unit_id
@@ -35,7 +36,10 @@ public class OracleSodMonitoring implements SodMonitoring {
                      'CCM-SOD-' || SUBSTR(RAWTOHEX(r.id), 1, 8) || '-' || SUBSTR(RAWTOHEX(ua.user_id), 1, 8) AS reference,
                      'Cumul SoD : ' || r.feature_a || ' + ' || r.feature_b AS title,
                      'L''utilisateur détient simultanément ' || r.feature_a || ' et ' || r.feature_b || '.' AS fact,
-                     'Règle SoD (§2.2) : ces deux fonctionnalités ne doivent pas être cumulées.' AS criterion
+                     'Règle SoD (§2.2) : ces deux fonctionnalités ne doivent pas être cumulées.' AS criterion,
+                     JSON_OBJECT('userId' VALUE RAWTOHEX(ua.user_id), 'ruleId' VALUE RAWTOHEX(r.id),
+                                 'featureA' VALUE r.feature_a, 'featureB' VALUE r.feature_b) AS source_record,
+                     JSON_OBJECT('ruleType' VALUE 'STATIC', 'severity' VALUE 'BLOCK') AS parameters_used
               FROM sod_rule r
               JOIN user_feature ua ON ua.code = r.feature_a
               JOIN user_feature ub ON ub.code = r.feature_b AND ub.user_id = ua.user_id
@@ -44,10 +48,12 @@ public class OracleSodMonitoring implements SodMonitoring {
             ) src
             ON (d.tenant_id = :tenant AND d.reference = src.reference)
             WHEN NOT MATCHED THEN
-              INSERT (id, tenant_id, mission_id, org_unit_id, reference, title,
-                      status_code, status_label, criticality_code, criticality_label, source, fact, criterion)
-              VALUES (SYS_GUID(), :tenant, NULL, src.org_unit_id, src.reference, src.title,
-                      'OUVERT', 'Ouvert', 'HIGH', 'Élevée', 'CCM', src.fact, src.criterion)
+              INSERT (id, tenant_id, control_code, org_unit_id, reference, title,
+                      criticality_code, criticality_label, fact, criterion,
+                      source_record, parameters_used, data_source)
+              VALUES (SYS_GUID(), :tenant, 'SOD-CUMUL', src.org_unit_id, src.reference, src.title,
+                      'HIGH', 'Élevée', src.fact, src.criterion,
+                      src.source_record, src.parameters_used, 'Base plateforme (habilitations)')
             """;
 
     private final NamedParameterJdbcTemplate jdbc;
