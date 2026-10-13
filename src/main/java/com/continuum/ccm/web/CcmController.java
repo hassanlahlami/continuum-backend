@@ -8,6 +8,7 @@ import com.continuum.ccm.api.CcmExceptionConversionService.ConvertNotPermittedEx
 import com.continuum.ccm.api.CcmExceptionConversionService.ExceptionNotVisibleException;
 import com.continuum.ccm.api.CcmExceptionConversionService.MissionNotFoundException;
 import com.continuum.ccm.api.CcmExceptionConversionService.NotRetainedException;
+import com.continuum.ccm.api.CcmExceptionDirectory;
 import com.continuum.ccm.api.CcmExceptionTriageService;
 import com.continuum.ccm.api.CcmExceptionTriageService.CcmExceptionNotVisibleException;
 import com.continuum.ccm.api.CcmExceptionTriageService.CcmExceptionView;
@@ -16,13 +17,18 @@ import com.continuum.ccm.api.CcmExceptionTriageService.JustificationRequiredExce
 import com.continuum.ccm.api.CcmExceptionTriageService.StaleCcmExceptionException;
 import com.continuum.ccm.api.CcmExceptionTriageService.TriageCommand;
 import com.continuum.ccm.api.CcmExceptionTriageService.TriageNotPermittedException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gen.app.ccm.api.CcmExceptionsApi;
 import gen.app.ccm.model.ActionRequest;
 import gen.app.ccm.model.AvailableAction;
 import gen.app.ccm.model.CcmException;
+import gen.app.ccm.model.CcmExceptionPage;
 import gen.app.ccm.model.ConvertCcmExceptionToFinding201Response;
 import gen.app.ccm.model.ConvertCcmExceptionToFindingRequest;
 import gen.app.ccm.model.Ref;
+import gen.app.ccm.model.UnitSummary;
+import gen.app.ccm.model.UserSummary;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,12 +57,43 @@ public class CcmController implements CcmExceptionsApi {
     private static final String CLAIM_TENANT = "tenant_id";
     private static final String CLAIM_USER = "continuum_user_id";
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final CcmExceptionTriageService triage;
     private final CcmExceptionConversionService conversion;
+    private final CcmExceptionDirectory exceptions;
 
-    public CcmController(CcmExceptionTriageService triage, CcmExceptionConversionService conversion) {
+    public CcmController(CcmExceptionTriageService triage, CcmExceptionConversionService conversion,
+            CcmExceptionDirectory exceptions) {
         this.triage = triage;
         this.conversion = conversion;
+        this.exceptions = exceptions;
+    }
+
+    @Override
+    public ResponseEntity<CcmException> getCcmException(UUID exceptionId) {
+        Jwt jwt = currentJwt();
+        UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
+        UUID user = uuidClaim(jwt, CLAIM_USER);
+        CcmExceptionDirectory.Row row = exceptions.findVisible(tenant, user, exceptionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Exception inconnue"));
+        return ResponseEntity.ok(toModel(tenant, user, row));
+    }
+
+    @Override
+    public ResponseEntity<CcmExceptionPage> listCcmExceptions(Integer page, Integer size, List<String> sort,
+            List<String> status, UUID unitId, UUID controlId, UUID runId, String criticality, Boolean assignedToMe) {
+        Jwt jwt = currentJwt();
+        UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
+        UUID user = uuidClaim(jwt, CLAIM_USER);
+        int p = page == null ? 0 : page;
+        int s = size == null ? 25 : size;
+        CcmExceptionDirectory.Filter filter = new CcmExceptionDirectory.Filter(
+                status, criticality, unitId, Boolean.TRUE.equals(assignedToMe));
+        CcmExceptionDirectory.Page result = exceptions.search(tenant, user, filter, p, s);
+        int totalPages = (int) Math.ceil(result.totalItems() / (double) s);
+        List<CcmException> items = result.items().stream().map(r -> toModel(tenant, user, r)).toList();
+        return ResponseEntity.ok(new CcmExceptionPage(p, s, result.totalItems(), totalPages, items));
     }
 
     @Override
@@ -135,6 +172,45 @@ public class CcmController implements CcmExceptionsApi {
             model.criticality(new Ref(v.criticalityCode(), null));
         }
         return model;
+    }
+
+    /** Projection du read model → modèle de contrat complet, avec {@code availableActions} décidées par le serveur. */
+    private CcmException toModel(UUID tenant, UUID user, CcmExceptionDirectory.Row r) {
+        CcmExceptionView view = new CcmExceptionView(r.id(), tenant, r.orgUnitId(), r.reference(), r.controlCode(),
+                r.title(), r.statusCode(), r.statusLabel(), r.criticalityCode(), r.assigneeUserId(),
+                r.dismissalJustification(), r.findingId(), 0);
+        CcmException model = new CcmException()
+                .id(r.id())
+                .controlCode(r.controlCode())
+                .summary(r.title())
+                .status(new Ref(r.statusCode(), r.statusLabel()))
+                .detectedAt(r.detectedAt())
+                .dismissalJustification(r.dismissalJustification())
+                .findingId(r.findingId())
+                .sourceRecord(parseJson(r.sourceRecordJson()))
+                .availableActions(toActions(triage.availableActions(tenant, user, view)));
+        if (r.criticalityCode() != null) {
+            model.criticality(new Ref(r.criticalityCode(), r.criticalityLabel()));
+        }
+        if (r.orgUnitId() != null) {
+            model.unit(new UnitSummary(r.orgUnitId(), r.unitLabel()).code(r.unitCode()));
+        }
+        if (r.assigneeUserId() != null) {
+            model.assignee(new UserSummary().id(r.assigneeUserId()));
+        }
+        return model;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseJson(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return JSON.readValue(json, Map.class);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
     }
 
     private static UUID assigneeFrom(ActionRequest actionRequest) {
