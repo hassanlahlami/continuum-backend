@@ -8,13 +8,13 @@ import java.util.Map;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Service;
 
 /**
  * Lecture du paramétrage des contrôles CCM (plan §5, CCM-03), PostgreSQL. Les paramètres sont stockés
- * en JSON ({@code ccm_control.params}) et désérialisés en {@code Map} pour le moteur.
+ * en JSON ({@code ccm_control.params}) et désérialisés en {@code Map} pour le moteur. Le bean est
+ * sélectionné par dialecte dans {@link CcmControlDirectoryConfig} (variante Oracle : {@code RAW(16)},
+ * {@code NUMBER(1)}, {@code VARCHAR2 IS JSON}).
  */
-@Service
 public class JdbcCcmControlDirectory implements CcmControlDirectory {
 
     private static final TypeReference<Map<String, Object>> PARAMS = new TypeReference<>() {
