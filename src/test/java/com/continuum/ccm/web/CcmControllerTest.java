@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.continuum.audittrail.internal.JdbcAuditTrailService;
 import com.continuum.ccm.internal.JdbcCcmExceptionConversionService;
+import com.continuum.ccm.internal.JdbcCcmExceptionDirectory;
 import com.continuum.ccm.internal.JdbcCcmExceptionTriageService;
 import com.continuum.iam.internal.JdbcAuthorizationService;
 import gen.app.ccm.model.ActionRequest;
 import gen.app.ccm.model.CcmException;
+import gen.app.ccm.model.CcmExceptionPage;
 import gen.app.ccm.model.ConvertCcmExceptionToFinding201Response;
 import gen.app.ccm.model.ConvertCcmExceptionToFindingRequest;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -85,7 +88,8 @@ class CcmControllerTest {
         JdbcAuthorizationService authz = new JdbcAuthorizationService(dataSource);
         controller = new CcmController(
                 new JdbcCcmExceptionTriageService(dataSource, authz, audit),
-                new JdbcCcmExceptionConversionService(dataSource, authz, audit));
+                new JdbcCcmExceptionConversionService(dataSource, authz, audit),
+                new JdbcCcmExceptionDirectory(dataSource));
     }
 
     @BeforeEach
@@ -172,6 +176,50 @@ class CcmControllerTest {
         assertThat(body.getMissionId()).isEqualTo(MISSION);
         assertThat(body.getFindingId()).isNotNull();
         assertThat(jt.queryForObject("SELECT count(*) FROM finding WHERE source='CCM'", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void getReturnsVisibleExceptionWithServerActions() {
+        authenticateAs(AUDITOR);
+        CcmException body = controller.getCcmException(EXC_NEW).getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getStatus().getCode()).isEqualTo("NEW");
+        assertThat(body.getDetectedAt()).isNotNull();
+        assertThat(body.getAvailableActions()).extracting(a -> a.getCode())
+                .containsExactlyInAnyOrder("retain", "dismiss", "assign");
+    }
+
+    @Test
+    void getIsNotFoundForStrangerOutsideScope() {
+        authenticateAs(STRANGER);
+        assertThatThrownBy(() -> controller.getCcmException(EXC_NEW))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode())
+                        .isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void listReturnsVisibleExceptionsAndFiltersByStatus() {
+        authenticateAs(AUDITOR);
+        CcmExceptionPage all = controller.listCcmExceptions(0, 25, null, null, null, null, null, null, false)
+                .getBody();
+        assertThat(all).isNotNull();
+        assertThat(all.getTotalItems()).isEqualTo(2);
+
+        CcmExceptionPage retained = controller.listCcmExceptions(
+                0, 25, null, List.of("RETAINED"), null, null, null, null, false).getBody();
+        assertThat(retained).isNotNull();
+        assertThat(retained.getItems()).singleElement()
+                .satisfies(x -> assertThat(x.getStatus().getCode()).isEqualTo("RETAINED"));
+    }
+
+    @Test
+    void listIsEmptyForStranger() {
+        authenticateAs(STRANGER);
+        CcmExceptionPage body = controller.listCcmExceptions(0, 25, null, null, null, null, null, null, false)
+                .getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getTotalItems()).isZero();
     }
 
     @Test
