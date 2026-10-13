@@ -47,4 +47,11 @@ public interface CcmControlDirectory {
 
     /** Les contrôles activés du tenant, avec leurs paramètres. */
     List<CcmControl> activeControls(UUID tenantId);
+
+    /**
+     * Tous les contrôles paramétrés du tenant (activés ou non), avec leur drapeau d'activation et leurs
+     * paramètres — base de la bibliothèque de contrôles ({@code listCcmControls}, cockpit CCM). Les
+     * contrôles jamais configurés pour ce tenant n'apparaissent pas ici (le catalogue du pack les complète).
+     */
+    List<CcmControl> allControls(UUID tenantId);
 }
