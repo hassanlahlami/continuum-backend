@@ -36,6 +36,15 @@ public class JdbcCcmControlDirectory implements CcmControlDirectory {
                 tenantId);
     }
 
+    @Override
+    public List<CcmControl> allControls(UUID tenantId) {
+        return jdbc.query(
+                "SELECT control_code, enabled, params FROM ccm_control WHERE tenant_id = ?",
+                (rs, i) -> new CcmControl(rs.getString("control_code"), rs.getBoolean("enabled"),
+                        parse(rs.getString("params"))),
+                tenantId);
+    }
+
     private Map<String, Object> parse(String json) {
         try {
             return mapper.readValue(json, PARAMS);
