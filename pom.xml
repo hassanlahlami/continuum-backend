@@ -233,6 +233,32 @@
             </configuration>
           </execution>
           <execution>
+            <id>generate-app-ccm</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/app/ccm.yaml.
+                   Régénérer via `npx @redocly/cli bundle app/ccm.yaml -o …/src/main/openapi/ccm.bundled.yaml`. -->
+              <inputSpec>src/main/openapi/ccm.bundled.yaml</inputSpec>
+              <generatorName>spring</generatorName>
+              <library>spring-boot</library>
+              <apiPackage>gen.app.ccm.api</apiPackage>
+              <modelPackage>gen.app.ccm.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <interfaceOnly>true</interfaceOnly>
+                <useSpringBoot3>true</useSpringBoot3>
+                <useTags>true</useTags>
+                <documentationProvider>none</documentationProvider>
+                <openApiNullable>false</openApiNullable>
+                <useJakartaEe>true</useJakartaEe>
+                <skipDefaultInterface>false</skipDefaultInterface>
+              </configOptions>
+            </configuration>
+          </execution>
+          <execution>
             <id>generate-admin-iam</id>
             <goals><goal>generate</goal></goals>
             <configuration>

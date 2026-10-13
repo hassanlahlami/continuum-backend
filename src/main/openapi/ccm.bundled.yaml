@@ -1,0 +1,1110 @@
+openapi: 3.1.0
+info:
+  title: Continuum — Contrôle continu (CCM)
+  version: 0.1.0
+  x-status: draft
+  description: |
+    Pages CCM-01 à CCM-08 (§5) : cockpit, bibliothèque et paramétrage métier des contrôles, exécutions, flux d'exceptions et triage, conversion en constat candidat, explorateur de population, rapprochements (L5).
+servers:
+  - url: /api/app
+security:
+  - bearer: []
+tags:
+  - name: ccm-overview
+  - name: ccm-controls
+  - name: ccm-runs
+  - name: ccm-exceptions
+  - name: ccm-population
+paths:
+  /ccm/overview:
+    get:
+      tags:
+        - ccm-overview
+      operationId: getCcmOverview
+      summary: Santé des contrôles (OK / dérive / échec), taux d'exceptions, tendance, dernières exécutions
+      x-required-feature: ccm.read
+      responses:
+        '200':
+          description: Vue d'ensemble.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmOverview'
+  /ccm/controls:
+    get:
+      tags:
+        - ccm-controls
+      operationId: listCcmControls
+      summary: Bibliothèque des contrôles (activés ou non pour le tenant)
+      x-required-feature: ccm.read
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum:
+              - CONFIGURATION
+              - MASTER_DATA
+              - TRANSACTIONS
+              - ACCESS
+              - RECONCILIATION
+        - name: active
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Contrôles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CcmControl'
+  /ccm/controls/{controlId}:
+    parameters:
+      - $ref: '#/components/parameters/ControlId'
+    get:
+      tags:
+        - ccm-controls
+      operationId: getCcmControl
+      summary: Fiche d'un contrôle (règle, paramètres métier, planification, référence normative)
+      x-required-feature: ccm.read
+      responses:
+        '200':
+          description: Contrôle.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmControl'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - ccm-controls
+      operationId: updateCcmControlSettings
+      summary: Paramétrage métier (seuils, périmètre, fréquence) — publication en maker-checker
+      x-required-feature: ccm.control.configure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CcmControlSettings'
+      responses:
+        '200':
+          description: Paramétrage enregistré (en attente de validation si exigé).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmControl'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /ccm/controls/{controlId}/actions/{actionCode}:
+    post:
+      tags:
+        - ccm-controls
+      operationId: performCcmControlAction
+      summary: Activer, désactiver, exécuter maintenant (202 + Job)
+      x-required-feature:
+        - ccm.control.configure
+        - ccm.control.run
+      parameters:
+        - $ref: '#/components/parameters/ControlId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Contrôle à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmControl'
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /ccm/controls/{controlId}/runs:
+    get:
+      tags:
+        - ccm-runs
+      operationId: listCcmControlRuns
+      summary: Historique des exécutions d'un contrôle
+      x-required-feature: ccm.read
+      parameters:
+        - $ref: '#/components/parameters/ControlId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Exécutions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmRunPage'
+  /ccm/runs/{runId}:
+    get:
+      tags:
+        - ccm-runs
+      operationId: getCcmRun
+      summary: Détail d'une exécution (population testée, exceptions, durée, source de données)
+      x-required-feature: ccm.read
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      responses:
+        '200':
+          description: Exécution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmRun'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /ccm/exceptions:
+    get:
+      tags:
+        - ccm-exceptions
+      operationId: listCcmExceptions
+      summary: Flux d'exceptions à trier (par criticité, contrôle, unité, statut)
+      x-required-feature: ccm.read
+      x-scope: unit
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/UnitId'
+        - name: controlId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: runId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: criticality
+          in: query
+          schema:
+            type: string
+        - name: assignedToMe
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Exceptions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmExceptionPage'
+  /ccm/exceptions/{exceptionId}:
+    get:
+      tags:
+        - ccm-exceptions
+      operationId: getCcmException
+      summary: Détail d'une exception, jusqu'à la transaction source du CBS (métadonnées de contexte)
+      x-required-feature: ccm.read
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/ExceptionId'
+      responses:
+        '200':
+          description: Exception.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmException'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /ccm/exceptions/{exceptionId}/actions/{actionCode}:
+    post:
+      tags:
+        - ccm-exceptions
+      operationId: performCcmExceptionAction
+      summary: Retenir, écarter (justification obligatoire), affecter, rouvrir
+      x-required-feature: ccm.exception.triage
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/ExceptionId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Exception à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CcmException'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /ccm/exceptions/{exceptionId}/finding-candidate:
+    post:
+      tags:
+        - ccm-exceptions
+      operationId: convertCcmExceptionToFinding
+      summary: Transformer une exception retenue en constat candidat dans une mission (audit par exception, §5.3)
+      x-required-feature: ccm.exception.convert
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/ExceptionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - missionId
+              properties:
+                missionId:
+                  $ref: '#/components/schemas/Id'
+                verificationId:
+                  $ref: '#/components/schemas/Id'
+                groupWithExceptionIds:
+                  type: array
+                  description: Autres exceptions du même contrôle à rattacher au même constat.
+                  items:
+                    $ref: '#/components/schemas/Id'
+      responses:
+        '201':
+          description: 'Constat candidat créé (FRAP pré-remplie : fait, critère, preuve = extrait de population).'
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - findingId
+                  - missionId
+                properties:
+                  findingId:
+                    $ref: '#/components/schemas/Id'
+                  missionId:
+                    $ref: '#/components/schemas/Id'
+                  route:
+                    type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /ccm/datasets:
+    get:
+      tags:
+        - ccm-population
+      operationId: listDatasets
+      summary: Jeux de population disponibles et leurs champs — **déclarés par le pack sectoriel installé**, jamais figés dans le code (D35)
+      x-required-feature: ccm.read
+      responses:
+        '200':
+          description: Jeux de données exploitables.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatasetDescriptor'
+  /ccm/population:
+    get:
+      tags:
+        - ccm-population
+      operationId: explorePopulation
+      summary: Explorer un jeu de population (lot L4) — filtres prédéfinis par jeu, jamais de requête libre
+      x-required-feature: ccm.population.explore
+      parameters:
+        - name: dataset
+          in: query
+          required: true
+          description: Code d'un jeu déclaré par le pack (voir listDatasets), par exemple MOVEMENTS en banque ou ENGAGEMENTS en établissement public.
+          schema:
+            type: string
+            example: MOVEMENTS
+        - name: filter
+          in: query
+          description: Filtres nommés du jeu (ex. branch=A001, status=DORMANT).
+          style: deepObject
+          explode: true
+          schema:
+            type: object
+            additionalProperties:
+              type: string
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Lignes (colonnes décrites dans la réponse).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PopulationPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /ccm/reconciliations:
+    get:
+      tags:
+        - ccm-population
+      operationId: listReconciliations
+      summary: Rapprochements automatisés (lot L5)
+      x-required-feature: ccm.reconciliation.read
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: Rapprochements.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      $ref: '#/components/schemas/Id'
+                    label:
+                      type: string
+                    runAt:
+                      type: string
+                      format: date-time
+                    matched:
+                      type: integer
+                    unmatched:
+                      type: integer
+                    status:
+                      $ref: '#/components/schemas/Ref'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ControlId:
+      name: controlId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ExceptionId:
+      name: exceptionId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Q:
+      name: q
+      in: query
+      description: Recherche libre.
+      schema:
+        type: string
+        maxLength: 200
+    ActionCode:
+      name: actionCode
+      in: path
+      required: true
+      description: Code d'une action disponible (voir availableActions).
+      schema:
+        type: string
+        pattern: ^[a-z][a-z0-9-]*$
+        example: submit-for-review
+    Page:
+      name: page
+      in: query
+      description: Numéro de page (commence à 0).
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      description: Taille de page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    Sort:
+      name: sort
+      in: query
+      description: 'Tri : champ,asc|desc — répétable.'
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          example: updatedAt,desc
+    StatusFilter:
+      name: status
+      in: query
+      description: Codes de statut (répétable).
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+    UnitId:
+      name: unitId
+      in: query
+      description: Filtre sur une unité organisationnelle (et ses sous-unités si la portée le permet).
+      schema:
+        $ref: '#/components/schemas/Id'
+    From:
+      name: from
+      in: query
+      description: Date de début (incluse).
+      schema:
+        type: string
+        format: date
+    To:
+      name: to
+      in: query
+      description: Date de fin (incluse).
+      schema:
+        type: string
+        format: date
+  schemas:
+    CcmControlSettings:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+        parameters:
+          type: object
+          description: Paramètres métier propres au contrôle (valeurs typées selon parameterDefinitions).
+          additionalProperties: true
+          example:
+            thresholdAmount: '1000000.00'
+            includeWeekends: true
+        scopeUnitIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        schedule:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum:
+                - ON_EVENT
+                - CRON
+            cron:
+              type: string
+              example: 0 0 2 * * *
+    CcmControl:
+      type: object
+      required:
+        - id
+        - code
+        - label
+        - category
+        - active
+        - health
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+          example: SOD-VIREMENTS
+        label:
+          type: string
+          example: Cumul saisie / validation des virements
+        category:
+          type: string
+          enum:
+            - CONFIGURATION
+            - MASTER_DATA
+            - TRANSACTIONS
+            - ACCESS
+            - RECONCILIATION
+        description:
+          type: string
+        normativeReference:
+          type: string
+          example: COSO principe 10 ; circulaire BAM contrôle interne
+        dataset:
+          type: string
+          example: ENTITLEMENTS
+        active:
+          type: boolean
+        health:
+          type: string
+          enum:
+            - OK
+            - DRIFT
+            - FAILING
+            - NEVER_RUN
+        exceptionRate:
+          type: number
+          example: 0.012
+        lastRunAt:
+          type: string
+          format: date-time
+        nextRunAt:
+          type: string
+          format: date-time
+        parameterDefinitions:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+              - type
+            properties:
+              name:
+                type: string
+                example: thresholdAmount
+              label:
+                type: string
+                example: Seuil de montant
+              type:
+                type: string
+                enum:
+                  - MONEY
+                  - NUMBER
+                  - BOOLEAN
+                  - STRING
+                  - DURATION
+              default:
+                type: string
+        settings:
+          $ref: '#/components/schemas/CcmControlSettings'
+        pendingPublication:
+          type: boolean
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+    CcmRun:
+      type: object
+      required:
+        - id
+        - controlId
+        - status
+        - startedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        controlId:
+          $ref: '#/components/schemas/Id'
+        controlLabel:
+          type: string
+        status:
+          type: string
+          enum:
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+        trigger:
+          type: string
+          enum:
+            - SCHEDULE
+            - EVENT
+            - MANUAL
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        populationSize:
+          type: integer
+          example: 10482311
+        exceptionsCount:
+          type: integer
+          example: 4
+        dataSource:
+          type: string
+          example: amplitude-prod (JDBC, vues V_AUDIT_*)
+        parametersUsed:
+          type: object
+          additionalProperties: true
+        problem:
+          $ref: '#/components/schemas/Problem'
+    CcmRunPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CcmRun'
+    CcmException:
+      type: object
+      required:
+        - id
+        - controlCode
+        - status
+        - detectedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        controlId:
+          $ref: '#/components/schemas/Id'
+        controlCode:
+          type: string
+        controlLabel:
+          type: string
+        runId:
+          $ref: '#/components/schemas/Id'
+        status:
+          $ref: '#/components/schemas/Ref'
+        criticality:
+          $ref: '#/components/schemas/Ref'
+        summary:
+          type: string
+          example: Virement de 98 000 MAD saisi et validé par U003
+        detectedAt:
+          type: string
+          format: date-time
+        unit:
+          $ref: '#/components/schemas/UnitSummary'
+        assignee:
+          $ref: '#/components/schemas/UserSummary'
+        amount:
+          $ref: '#/components/schemas/Money'
+        sourceRecord:
+          type: object
+          description: Transaction ou enregistrement source du CBS (champs du modèle canonique).
+          additionalProperties: true
+          example:
+            mvtId: 3
+            accountId: A001000000002
+            operationDate: '2026-09-10'
+            enteredBy: U003
+            validatedBy: U003
+            channel: GUICHET
+        relatedRecords:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        dismissalJustification:
+          type: string
+        findingId:
+          $ref: '#/components/schemas/Id'
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+    CcmExceptionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CcmException'
+    CcmOverview:
+      type: object
+      properties:
+        activeControls:
+          type: integer
+          example: 3
+        failingControls:
+          type: integer
+        driftingControls:
+          type: integer
+        openExceptions:
+          type: integer
+          example: 5
+        exceptionsToTriage:
+          type: integer
+        controls:
+          type: array
+          items:
+            $ref: '#/components/schemas/CcmControl'
+        exceptionTrend:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              count:
+                type: integer
+    DatasetDescriptor:
+      type: object
+      description: Jeu de population déclaré par le pack sectoriel (§6.2) — le noyau ne connaît aucun vocabulaire métier.
+      required:
+        - code
+        - label
+        - fields
+      properties:
+        code:
+          type: string
+          example: MOVEMENTS
+        label:
+          type: string
+          example: Mouvements comptables
+        canonicalEntity:
+          type: string
+          description: Entité du modèle canonique alimentée par ce jeu
+          example: MOVEMENT
+        recordCount:
+          type: integer
+          description: Volume approximatif disponible
+        fields:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+              - type
+            properties:
+              name:
+                type: string
+                example: amount
+              label:
+                type: string
+                example: Montant
+              type:
+                type: string
+                enum:
+                  - STRING
+                  - NUMBER
+                  - MONEY
+                  - DATE
+                  - DATETIME
+                  - BOOLEAN
+              filterable:
+                type: boolean
+              sensitive:
+                type: boolean
+                description: Masqué selon les droits et jamais journalisé (§10.5)
+    PopulationPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - columns
+            - items
+          properties:
+            columns:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  label:
+                    type: string
+                  type:
+                    type: string
+                    enum:
+                      - STRING
+                      - NUMBER
+                      - MONEY
+                      - DATE
+                      - DATETIME
+                      - BOOLEAN
+            items:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+    AvailableAction:
+      type: object
+      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: submit-for-review
+        label:
+          type: string
+          example: Soumettre à la revue
+        style:
+          type: string
+          enum:
+            - primary
+            - secondary
+            - danger
+          default: secondary
+        requiresComment:
+          type: boolean
+          default: false
+        requiresSignature:
+          type: boolean
+          default: false
+        requiresStepUp:
+          type: boolean
+          default: false
+          description: Authentification renforcée (acr=2) exigée
+        confirmationMessage:
+          type: string
+          description: Message de confirmation à afficher avant exécution
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    ActionRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 4000
+        payload:
+          type: object
+          additionalProperties: true
+          description: Données propres à l'action (ex. motif de refus, destinataires).
+    Job:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        type:
+          type: string
+          example: REPORT_GENERATION
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+            - CANCELLED
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        resultUrl:
+          type: string
+          description: Lien vers le résultat quand status = SUCCEEDED
+        problem:
+          $ref: '#/components/schemas/Problem'
+    PageMeta:
+      type: object
+      required:
+        - page
+        - size
+        - totalItems
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          example: 25
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 42
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 2
+    Ref:
+      type: object
+      description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: HIGH
+        label:
+          type: string
+          description: Libellé dans la langue de l'utilisateur
+          example: Élevée
+        color:
+          type: string
+          description: Token de couleur sémantique (§1.6), jamais une couleur en dur
+          example: criticality-high
+    UnitSummary:
+      type: object
+      required:
+        - id
+        - label
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+          example: DIR-RESEAU
+        label:
+          type: string
+          example: Direction du Réseau
+        typeLabel:
+          type: string
+          example: Direction
+    UserSummary:
+      type: object
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+          example: Inspecteur Un
+        positionLabel:
+          type: string
+          description: Position principale courante (libellé du tenant)
+          example: Inspecteur
+        unitLabel:
+          type: string
+          example: Département Inspection du Réseau
+    Money:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: string
+          pattern: ^-?\d+(\.\d{1,4})?$
+          example: '2500000.00'
+        currency:
+          type: string
+          pattern: ^[A-Z]{3}$
+          example: MAD
+  responses:
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflit de version (l'objet a changé) ou état incompatible avec l'action.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ValidationFailed:
+      description: Données invalides — détail par champ dans errors[].
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/validation
+            title: Données invalides
+            status: 422
+            code: CTN-AUD-0422
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+            errors:
+              - field: plannedEnd
+                code: date.before-start
+                message: La date de fin doit être postérieure à la date de début.
+    JobAccepted:
+      description: Opération longue acceptée — suivre le Job.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Job'
+    Forbidden:
+      description: Fonctionnalité non détenue sur cette portée, ou refus de séparation des tâches (code CTN-IAM-0210).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/sod-violation
+            title: Séparation des tâches
+            status: 403
+            detail: Vous avez rédigé ce constat ; sa validation doit être faite par une autre personne.
+            code: CTN-IAM-0210
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+            sodRule: NOT_CREATOR
