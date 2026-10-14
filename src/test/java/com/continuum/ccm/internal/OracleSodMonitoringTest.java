@@ -85,7 +85,7 @@ class OracleSodMonitoringTest {
         // D34 : exception à trier, aucun constat créé.
         assertThat(jt.queryForObject("SELECT count(*) FROM finding", Integer.class)).isZero();
         assertThat(jt.queryForObject(
-                "SELECT count(*) FROM ccm_exception WHERE control_code = 'SOD-CUMUL' AND status_code = 'NEW' "
+                "SELECT count(*) FROM ccm_exception WHERE control_code = 'SOD-VIREMENTS' AND status_code = 'NEW' "
                 + "AND reference LIKE 'CCM-SOD-%'", Integer.class)).isEqualTo(1);
         assertThat(jt.queryForObject("SELECT title FROM ccm_exception", String.class))
                 .contains("finding.write").contains("finding.validate");
