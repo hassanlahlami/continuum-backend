@@ -38,7 +38,7 @@ public class JdbcSodMonitoring implements SodMonitoring {
             INSERT INTO ccm_exception (id, tenant_id, control_code, org_unit_id, reference, title,
                                        criticality_code, criticality_label, fact, criterion,
                                        source_record, parameters_used, data_source)
-            SELECT gen_random_uuid(), :tenant, 'SOD-CUMUL', MIN(ua.unit_id::text)::uuid,
+            SELECT gen_random_uuid(), :tenant, 'SOD-VIREMENTS', MIN(ua.unit_id::text)::uuid,
                    'CCM-SOD-' || left(r.id::text, 8) || '-' || left(ua.user_id::text, 8),
                    'Cumul SoD : ' || r.feature_a || ' + ' || r.feature_b,
                    'HIGH', 'Élevée',

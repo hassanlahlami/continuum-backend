@@ -51,7 +51,7 @@ public class OracleSodMonitoring implements SodMonitoring {
               INSERT (id, tenant_id, control_code, org_unit_id, reference, title,
                       criticality_code, criticality_label, fact, criterion,
                       source_record, parameters_used, data_source)
-              VALUES (SYS_GUID(), :tenant, 'SOD-CUMUL', src.org_unit_id, src.reference, src.title,
+              VALUES (SYS_GUID(), :tenant, 'SOD-VIREMENTS', src.org_unit_id, src.reference, src.title,
                       'HIGH', 'Élevée', src.fact, src.criterion,
                       src.source_record, src.parameters_used, 'Base plateforme (habilitations)')
             """;

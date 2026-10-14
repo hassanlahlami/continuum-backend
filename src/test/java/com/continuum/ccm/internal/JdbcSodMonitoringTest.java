@@ -81,7 +81,7 @@ class JdbcSodMonitoringTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM finding WHERE tenant_id = ?", Integer.class, TENANT))
                 .isZero();
         assertThat(jdbc.queryForObject(
-                "SELECT count(*) FROM ccm_exception WHERE tenant_id = ? AND control_code = 'SOD-CUMUL' "
+                "SELECT count(*) FROM ccm_exception WHERE tenant_id = ? AND control_code = 'SOD-VIREMENTS' "
                 + "AND status_code = 'NEW' AND reference LIKE 'CCM-SOD-%'",
                 Integer.class, TENANT)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT title FROM ccm_exception WHERE tenant_id = ?", String.class, TENANT))
