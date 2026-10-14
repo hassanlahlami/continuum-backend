@@ -70,7 +70,7 @@ class CcmControlsControllerTest {
         runCp("ccm-controls-seed.sql");
 
         controller = new CcmControlsController(
-                new JdbcCcmControlDirectory(dataSource, new ObjectMapper()),
+                new CcmControlAssembler(new JdbcCcmControlDirectory(dataSource, new ObjectMapper())),
                 new JdbcAuthorizationService(dataSource));
     }
 

@@ -1,5 +1,6 @@
 package com.continuum.ccm.api;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -42,9 +43,24 @@ public interface CcmExceptionDirectory {
     record Filter(List<String> statusCodes, String criticality, UUID unitId, boolean assignedToMe) {
     }
 
+    /** Un point de tendance : nombre d'exceptions détectées un jour donné (périmètre appliqué). */
+    record TrendPoint(LocalDate date, int count) {
+    }
+
+    /**
+     * Agrégats du cockpit CCM (contrat {@code getCcmOverview}, §5) dans le périmètre {@code ccm.read} :
+     * exceptions encore ouvertes (ni écartées ni converties), exceptions à trier (statut {@code NEW}),
+     * et tendance quotidienne des détections.
+     */
+    record Stats(int openExceptions, int toTriage, List<TrendPoint> trend) {
+    }
+
     /** Une exception visible par l'utilisateur, ou vide si inconnue/hors périmètre. */
     Optional<Row> findVisible(UUID tenantId, UUID userId, UUID exceptionId);
 
     /** Page d'exceptions visibles filtrées (tri par date de détection décroissante). */
     Page search(UUID tenantId, UUID userId, Filter filter, int page, int size);
+
+    /** Agrégats du cockpit (vue d'ensemble) dans le périmètre {@code ccm.read} de l'utilisateur. */
+    Stats overviewStats(UUID tenantId, UUID userId);
 }

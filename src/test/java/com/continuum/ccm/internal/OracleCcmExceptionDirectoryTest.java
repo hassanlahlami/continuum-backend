@@ -106,4 +106,15 @@ class OracleCcmExceptionDirectoryTest {
         assertThat(directory.search(TENANT, STRANGER, all(), 0, 25).totalItems()).isZero();
         assertThat(directory.findVisible(TENANT, STRANGER, EXC_UNIT)).isEmpty();
     }
+
+    @Test
+    void aggregatesOverviewStatsInScope() {
+        // Les deux exceptions visibles sont NEW → ouvertes et à trier ; la tendance les compte toutes.
+        CcmExceptionDirectory.Stats stats = directory.overviewStats(TENANT, AUDITOR);
+        assertThat(stats.openExceptions()).isEqualTo(2);
+        assertThat(stats.toTriage()).isEqualTo(2);
+        assertThat(stats.trend().stream().mapToInt(p -> p.count()).sum()).isEqualTo(2);
+        // Hors périmètre : l'étranger n'agrège rien.
+        assertThat(directory.overviewStats(TENANT, STRANGER).openExceptions()).isZero();
+    }
 }
