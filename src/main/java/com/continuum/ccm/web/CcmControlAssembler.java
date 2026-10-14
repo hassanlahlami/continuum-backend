@@ -4,6 +4,8 @@ import com.continuum.ccm.api.CcmControlCatalog;
 import com.continuum.ccm.api.CcmControlCatalog.ControlDescriptor;
 import com.continuum.ccm.api.CcmControlCatalog.ParamDef;
 import com.continuum.ccm.api.CcmControlDirectory;
+import com.continuum.ccm.api.CcmRunDirectory;
+import com.continuum.ccm.api.CcmRunDirectory.LatestRun;
 import gen.app.ccm.model.CcmControl;
 import gen.app.ccm.model.CcmControlParameterDefinitionsInner;
 import gen.app.ccm.model.CcmControlSettings;
@@ -27,17 +29,20 @@ import org.springframework.stereotype.Component;
 class CcmControlAssembler {
 
     private final CcmControlDirectory controls;
+    private final CcmRunDirectory runs;
 
-    CcmControlAssembler(CcmControlDirectory controls) {
+    CcmControlAssembler(CcmControlDirectory controls, CcmRunDirectory runs) {
         this.controls = controls;
+        this.runs = runs;
     }
 
     /** Liste des contrôles du tenant, filtrée (recherche libre, catégorie, activation ; tous optionnels). */
     List<CcmControl> list(UUID tenant, String q, String category, Boolean active) {
         Map<String, CcmControlDirectory.CcmControl> config = config(tenant);
+        Map<String, LatestRun> health = runs.latestByControl(tenant);
         String needle = q == null ? null : q.strip().toLowerCase(Locale.ROOT);
         return CcmControlCatalog.all().stream()
-                .map(d -> toModel(d, config.get(d.code())))
+                .map(d -> toModel(d, config.get(d.code()), health.get(d.code())))
                 .filter(c -> category == null || category.equals(c.getCategory().getValue()))
                 .filter(c -> active == null || active.equals(c.getActive()))
                 .filter(c -> needle == null || c.getCode().toLowerCase(Locale.ROOT).contains(needle)
@@ -47,7 +52,8 @@ class CcmControlAssembler {
 
     /** Un contrôle par son identifiant, ou vide s'il n'est pas au catalogue. */
     Optional<CcmControl> byId(UUID tenant, UUID controlId) {
-        return CcmControlCatalog.byId(controlId).map(d -> toModel(d, config(tenant).get(d.code())));
+        return CcmControlCatalog.byId(controlId)
+                .map(d -> toModel(d, config(tenant).get(d.code()), runs.latestByControl(tenant).get(d.code())));
     }
 
     private Map<String, CcmControlDirectory.CcmControl> config(UUID tenant) {
@@ -55,10 +61,10 @@ class CcmControlAssembler {
                 .collect(Collectors.toMap(CcmControlDirectory.CcmControl::code, Function.identity()));
     }
 
-    private static CcmControl toModel(ControlDescriptor d, CcmControlDirectory.CcmControl config) {
+    private static CcmControl toModel(ControlDescriptor d, CcmControlDirectory.CcmControl config, LatestRun run) {
         boolean enabled = config != null && config.enabled();
         CcmControl model = new CcmControl(d.id(), d.code(), d.label(),
-                CcmControl.CategoryEnum.fromValue(d.category()), enabled, CcmControl.HealthEnum.NEVER_RUN)
+                CcmControl.CategoryEnum.fromValue(d.category()), enabled, health(run))
                 .description(d.description())
                 .normativeReference(d.normativeReference())
                 .dataset(d.dataset())
@@ -66,7 +72,30 @@ class CcmControlAssembler {
         if (config != null) {
             model.settings(new CcmControlSettings(1).parameters(config.params()));
         }
+        if (run != null) {
+            model.lastRunAt(run.finishedAt());
+            exceptionRate(run).ifPresent(model::exceptionRate);
+        }
         return model;
+    }
+
+    /** Santé dérivée de la dernière exécution : échec ⇒ FAILING, sinon OK ; aucune exécution ⇒ NEVER_RUN. */
+    private static CcmControl.HealthEnum health(LatestRun run) {
+        if (run == null) {
+            return CcmControl.HealthEnum.NEVER_RUN;
+        }
+        return run.status() == CcmRunDirectory.Status.FAILED
+                ? CcmControl.HealthEnum.FAILING
+                : CcmControl.HealthEnum.OK;
+    }
+
+    /** Taux d'exceptions = exceptions / population, si la population est connue et non nulle. */
+    private static Optional<java.math.BigDecimal> exceptionRate(LatestRun run) {
+        if (run.populationSize() == null || run.populationSize() <= 0 || run.exceptionsCount() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(java.math.BigDecimal.valueOf(run.exceptionsCount())
+                .divide(java.math.BigDecimal.valueOf(run.populationSize()), 6, java.math.RoundingMode.HALF_UP));
     }
 
     private static CcmControlParameterDefinitionsInner toParamDef(ParamDef p) {

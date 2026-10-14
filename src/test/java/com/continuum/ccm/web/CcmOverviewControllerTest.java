@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.continuum.ccm.internal.JdbcCcmControlDirectory;
 import com.continuum.ccm.internal.JdbcCcmExceptionDirectory;
+import com.continuum.ccm.internal.JdbcCcmRunDirectory;
 import com.continuum.iam.internal.JdbcAuthorizationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gen.app.ccm.model.CcmOverview;
@@ -70,10 +71,12 @@ class CcmOverviewControllerTest {
         run(pg.resolve("V202610091500__finding_frap.sql"));
         run(pg.resolve("V202610091600__ccm_control.sql"));
         run(pg.resolve("V202610121000__ccm_exception.sql"));
+        run(pg.resolve("V202610141000__ccm_run.sql"));
         runCp("ccm-overview-seed.sql");
 
         controller = new CcmOverviewController(
-                new CcmControlAssembler(new JdbcCcmControlDirectory(dataSource, new ObjectMapper())),
+                new CcmControlAssembler(new JdbcCcmControlDirectory(dataSource, new ObjectMapper()),
+                        new JdbcCcmRunDirectory(dataSource)),
                 new JdbcCcmExceptionDirectory(dataSource),
                 new JdbcAuthorizationService(dataSource));
     }
