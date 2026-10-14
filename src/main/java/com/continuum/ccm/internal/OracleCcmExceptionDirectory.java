@@ -117,6 +117,22 @@ public class OracleCcmExceptionDirectory implements CcmExceptionDirectory {
         return new Page(items, total == null ? 0 : total);
     }
 
+    @Override
+    public Stats overviewStats(UUID tenantId, UUID userId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", raw(tenantId)).addValue("user", raw(userId));
+        Integer open = jdbc.queryForObject(
+                "SELECT count(*) " + FROM + " AND ce.status_code NOT IN ('DISMISSED', 'CONVERTED')",
+                params, Integer.class);
+        Integer toTriage = jdbc.queryForObject(
+                "SELECT count(*) " + FROM + " AND ce.status_code = 'NEW'", params, Integer.class);
+        List<TrendPoint> trend = jdbc.query(
+                "SELECT CAST(ce.detected_at AS DATE) AS d, count(*) AS c " + FROM
+                        + " GROUP BY CAST(ce.detected_at AS DATE) ORDER BY d",
+                params, (rs, i) -> new TrendPoint(rs.getDate("d").toLocalDate(), rs.getInt("c")));
+        return new Stats(open == null ? 0 : open, toTriage == null ? 0 : toTriage, trend);
+    }
+
     private static byte[] raw(UUID id) {
         if (id == null) {
             return null;
