@@ -61,6 +61,11 @@ final class CcmExceptionJson {
         return write(p);
     }
 
+    /** Sérialise une table de paramètres (ex. {@code parameters_used} d'une exécution {@code ccm_run}). */
+    static String object(Map<String, Object> value) {
+        return value == null ? null : write(value);
+    }
+
     private static String str(Object value) {
         return value == null ? null : value.toString();
     }

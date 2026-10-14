@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.continuum.ccm.api.CcmControlCatalog;
+import com.continuum.ccm.api.CcmRunDirectory;
 import com.continuum.ccm.internal.JdbcCcmControlDirectory;
+import com.continuum.ccm.internal.JdbcCcmRunDirectory;
 import com.continuum.iam.internal.JdbcAuthorizationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gen.app.ccm.model.CcmControl;
 import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -67,10 +70,12 @@ class CcmControlsControllerTest {
         run(pg.resolve("R__feature_catalog.sql"));
         run(pg.resolve("V202609301000__entity_iam_structure.sql"));
         run(pg.resolve("V202610091600__ccm_control.sql"));
+        run(pg.resolve("V202610141000__ccm_run.sql"));
         runCp("ccm-controls-seed.sql");
 
         controller = new CcmControlsController(
-                new CcmControlAssembler(new JdbcCcmControlDirectory(dataSource, new ObjectMapper())),
+                new CcmControlAssembler(new JdbcCcmControlDirectory(dataSource, new ObjectMapper()),
+                        new JdbcCcmRunDirectory(dataSource)),
                 new JdbcAuthorizationService(dataSource));
     }
 
@@ -140,6 +145,24 @@ class CcmControlsControllerTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode())
                         .isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void derivesControlHealthFromLatestRun() {
+        authenticateAs(READER);
+        new JdbcCcmRunDirectory(dataSource).record(new CcmRunDirectory.RunRecord(
+                TENANT, "SEUIL-HORAIRE", CcmRunDirectory.Trigger.SCHEDULE,
+                OffsetDateTime.now().minusMinutes(5), OffsetDateTime.now(), 1000L, 3, "CBS", null, null));
+
+        CcmControl ran = controller.getCcmControl(CcmControlCatalog.idOf("SEUIL-HORAIRE")).getBody();
+        assertThat(ran).isNotNull();
+        assertThat(ran.getHealth()).isEqualTo(CcmControl.HealthEnum.OK);
+        assertThat(ran.getLastRunAt()).isNotNull();
+        assertThat(ran.getExceptionRate()).isNotNull();
+        // Un contrôle jamais exécuté reste NEVER_RUN.
+        CcmControl neverRun = controller.getCcmControl(CcmControlCatalog.idOf("SOD-VIREMENTS")).getBody();
+        assertThat(neverRun).isNotNull();
+        assertThat(neverRun.getHealth()).isEqualTo(CcmControl.HealthEnum.NEVER_RUN);
     }
 
     @Test

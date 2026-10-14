@@ -16,6 +16,8 @@ final class CcmCriteriaMapper {
 
     static final String CONTROL_DORMANT = "COMPTES-DORMANTS";
     static final String CONTROL_OUT_OF_BOUNDS = "SEUIL-HORAIRE";
+    /** Contrôle SoD du pack (CCM-1) dont le moteur de cumul d'habilitations réalise le « volet B » (Q14). */
+    static final String CONTROL_SOD = "SOD-VIREMENTS";
 
     private CcmCriteriaMapper() {
     }

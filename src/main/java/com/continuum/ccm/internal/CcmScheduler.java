@@ -2,11 +2,15 @@ package com.continuum.ccm.internal;
 
 import com.continuum.ccm.api.CcmControlDirectory;
 import com.continuum.ccm.api.CcmControlDirectory.CcmControl;
+import com.continuum.ccm.api.CcmRunDirectory;
+import com.continuum.ccm.api.CcmRunDirectory.RunRecord;
+import com.continuum.ccm.api.CcmRunDirectory.Trigger;
 import com.continuum.ccm.api.PopulationControlMonitoring;
 import com.continuum.ccm.api.SodMonitoring;
 import com.continuum.tenancy.api.Tenant;
 import com.continuum.tenancy.api.TenancyService;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,16 +38,18 @@ class CcmScheduler {
     private final SodMonitoring sodMonitoring;
     private final Optional<PopulationControlMonitoring> populationMonitoring;
     private final CcmControlDirectory controlDirectory;
+    private final CcmRunDirectory runDirectory;
     private final int lookbackDays;
 
     CcmScheduler(TenancyService tenancy, SodMonitoring sodMonitoring,
             Optional<PopulationControlMonitoring> populationMonitoring,
-            CcmControlDirectory controlDirectory,
+            CcmControlDirectory controlDirectory, CcmRunDirectory runDirectory,
             @Value("${continuum.ccm.lookback-days:90}") int lookbackDays) {
         this.tenancy = tenancy;
         this.sodMonitoring = sodMonitoring;
         this.populationMonitoring = populationMonitoring;
         this.controlDirectory = controlDirectory;
+        this.runDirectory = runDirectory;
         this.lookbackDays = lookbackDays;
     }
 
@@ -51,11 +57,27 @@ class CcmScheduler {
     @Scheduled(initialDelay = 15_000, fixedDelay = 300_000)
     void runSodControls() {
         for (Tenant tenant : tenancy.listActive()) {
-            int created = sodMonitoring.detectCumuls(tenant.id());
-            if (created > 0) {
-                log.info("CCM SoD : {} nouvelle(s) exception(s) pour le tenant {}", created, tenant.code());
+            OffsetDateTime startedAt = OffsetDateTime.now();
+            try {
+                int created = sodMonitoring.detectCumuls(tenant.id());
+                recordRun(tenant, CcmCriteriaMapper.CONTROL_SOD, startedAt, null, created,
+                        "Base plateforme (habilitations)", null);
+                if (created > 0) {
+                    log.info("CCM SoD : {} nouvelle(s) exception(s) pour le tenant {}", created, tenant.code());
+                }
+            } catch (RuntimeException e) {
+                recordRun(tenant, CcmCriteriaMapper.CONTROL_SOD, startedAt, null, 0,
+                        "Base plateforme (habilitations)", e.getMessage());
+                log.warn("CCM SoD en échec pour le tenant {} : {}", tenant.code(), e.getMessage());
             }
         }
+    }
+
+    /** Enregistre une exécution de contrôle dans l'historique ({@code ccm_run}) ; {@code problem} ⇒ échec. */
+    private void recordRun(Tenant tenant, String controlCode, OffsetDateTime startedAt,
+            Long populationSize, int exceptionsCount, String dataSource, String problem) {
+        runDirectory.record(new RunRecord(tenant.id(), controlCode, Trigger.SCHEDULE, startedAt,
+                OffsetDateTime.now(), populationSize, exceptionsCount, dataSource, null, problem));
     }
 
     /**
@@ -73,17 +95,29 @@ class CcmScheduler {
         LocalDate from = to.minusDays(lookbackDays);
         for (Tenant tenant : tenancy.listActive()) {
             for (CcmControl control : controlDirectory.activeControls(tenant.id())) {
-                int created = switch (control.code()) {
-                    case CcmCriteriaMapper.CONTROL_DORMANT -> monitoring.recordDormantExceptions(
-                            tenant.id(), control.code(), CcmCriteriaMapper.dormant(control, from, to),
-                            CcmCriteriaMapper.largeOutflow(control));
-                    case CcmCriteriaMapper.CONTROL_OUT_OF_BOUNDS -> monitoring.recordOutOfBoundsExceptions(
-                            tenant.id(), control.code(), CcmCriteriaMapper.outOfBounds(control, from, to));
-                    default -> 0;
-                };
-                if (created > 0) {
-                    log.info("CCM {} : {} nouvelle(s) exception(s) pour le tenant {}",
-                            control.code(), created, tenant.code());
+                if (!CcmCriteriaMapper.CONTROL_DORMANT.equals(control.code())
+                        && !CcmCriteriaMapper.CONTROL_OUT_OF_BOUNDS.equals(control.code())) {
+                    continue;
+                }
+                OffsetDateTime startedAt = OffsetDateTime.now();
+                try {
+                    int created = switch (control.code()) {
+                        case CcmCriteriaMapper.CONTROL_DORMANT -> monitoring.recordDormantExceptions(
+                                tenant.id(), control.code(), CcmCriteriaMapper.dormant(control, from, to),
+                                CcmCriteriaMapper.largeOutflow(control));
+                        case CcmCriteriaMapper.CONTROL_OUT_OF_BOUNDS -> monitoring.recordOutOfBoundsExceptions(
+                                tenant.id(), control.code(), CcmCriteriaMapper.outOfBounds(control, from, to));
+                        default -> 0;
+                    };
+                    recordRun(tenant, control.code(), startedAt, null, created, null, null);
+                    if (created > 0) {
+                        log.info("CCM {} : {} nouvelle(s) exception(s) pour le tenant {}",
+                                control.code(), created, tenant.code());
+                    }
+                } catch (RuntimeException e) {
+                    recordRun(tenant, control.code(), startedAt, null, 0, null, e.getMessage());
+                    log.warn("CCM {} en échec pour le tenant {} : {}", control.code(), tenant.code(),
+                            e.getMessage());
                 }
             }
         }
