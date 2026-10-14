@@ -60,6 +60,14 @@ class OracleCcmRunDirectoryTest {
                 """);
         run(new FileSystemResource(oracle.resolve("V202610141000__ccm_run.sql")));
         directory = new OracleCcmRunDirectory(dataSource);
+
+        OffsetDateTime t0 = OffsetDateTime.now().minusHours(2);
+        directory.record(new RunRecord(TENANT, "SEUIL-HORAIRE", Trigger.SCHEDULE,
+                t0, t0.plusSeconds(10), 1000L, 2, "CBS", Map.of("thresholdAmount", 1_000_000), null));
+        directory.record(new RunRecord(TENANT, "SEUIL-HORAIRE", Trigger.SCHEDULE,
+                t0.plusHours(1), t0.plusHours(1).plusSeconds(5), 1200L, 0, "CBS", null, "connexion CBS perdue"));
+        directory.record(new RunRecord(TENANT, "COMPTES-DORMANTS", Trigger.MANUAL,
+                t0.plusMinutes(30), t0.plusMinutes(30).plusSeconds(3), null, 1, null, null, null));
     }
 
     private static void run(Resource script) {
@@ -71,15 +79,7 @@ class OracleCcmRunDirectoryTest {
     }
 
     @Test
-    void recordsRunsAndReportsLatestByControl() {
-        OffsetDateTime t0 = OffsetDateTime.now().minusHours(2);
-        directory.record(new RunRecord(TENANT, "SEUIL-HORAIRE", Trigger.SCHEDULE,
-                t0, t0.plusSeconds(10), 1000L, 2, "CBS", Map.of("thresholdAmount", 1_000_000), null));
-        directory.record(new RunRecord(TENANT, "SEUIL-HORAIRE", Trigger.SCHEDULE,
-                t0.plusHours(1), t0.plusHours(1).plusSeconds(5), 1200L, 0, "CBS", null, "connexion CBS perdue"));
-        directory.record(new RunRecord(TENANT, "COMPTES-DORMANTS", Trigger.MANUAL,
-                t0.plusMinutes(30), t0.plusMinutes(30).plusSeconds(3), null, 1, null, null, null));
-
+    void reportsLatestByControl() {
         Map<String, LatestRun> latest = directory.latestByControl(TENANT);
         assertThat(latest).containsOnlyKeys("SEUIL-HORAIRE", "COMPTES-DORMANTS");
         assertThat(latest.get("SEUIL-HORAIRE").status()).isEqualTo(Status.FAILED);
@@ -87,5 +87,20 @@ class OracleCcmRunDirectoryTest {
         assertThat(latest.get("COMPTES-DORMANTS").status()).isEqualTo(Status.SUCCEEDED);
         assertThat(latest.get("COMPTES-DORMANTS").populationSize()).isNull();
         assertThat(latest.get("COMPTES-DORMANTS").exceptionsCount()).isEqualTo(1);
+    }
+
+    @Test
+    void readsRunsByControlAndById() {
+        CcmRunDirectory.RunPage page = directory.listByControl(TENANT, "SEUIL-HORAIRE", 0, 25);
+        assertThat(page.totalItems()).isEqualTo(2);
+        // Plus récent d'abord : l'échec postérieur en tête.
+        assertThat(page.items().get(0).status()).isEqualTo(Status.FAILED);
+        UUID id = page.items().get(0).id();
+        assertThat(directory.findById(TENANT, id)).isPresent()
+                .get().satisfies(v -> {
+                    assertThat(v.controlCode()).isEqualTo("SEUIL-HORAIRE");
+                    assertThat(v.parametersUsedJson()).isNull();
+                });
+        assertThat(directory.findById(TENANT, UUID.randomUUID())).isEmpty();
     }
 }
