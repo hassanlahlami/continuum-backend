@@ -3,9 +3,12 @@ package com.continuum.ccm.internal;
 import com.continuum.ccm.api.CcmRunDirectory;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
@@ -15,6 +18,26 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
  * par dialecte dans {@link CcmRunConfig}.
  */
 public class JdbcCcmRunDirectory implements CcmRunDirectory {
+
+    private static final String VIEW_COLUMNS = """
+            SELECT id, control_code, status, trigger_type, started_at, finished_at,
+                   population_size, exceptions_count, data_source,
+                   parameters_used::text AS parameters_used, problem_detail
+            FROM ccm_run
+            """;
+
+    private static final RowMapper<RunView> VIEW = (rs, i) -> new RunView(
+            rs.getObject("id", UUID.class),
+            rs.getString("control_code"),
+            Status.valueOf(rs.getString("status")),
+            Trigger.valueOf(rs.getString("trigger_type")),
+            rs.getObject("started_at", OffsetDateTime.class),
+            rs.getObject("finished_at", OffsetDateTime.class),
+            rs.getObject("population_size", Long.class),
+            rs.getObject("exceptions_count", Integer.class),
+            rs.getString("data_source"),
+            rs.getString("parameters_used"),
+            rs.getString("problem_detail"));
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -67,5 +90,27 @@ public class JdbcCcmRunDirectory implements CcmRunDirectory {
                             rs.getObject("exceptions_count", Integer.class)));
                 });
         return latest;
+    }
+
+    @Override
+    public Optional<RunView> findById(UUID tenantId, UUID runId) {
+        return jdbc.query(VIEW_COLUMNS + " WHERE tenant_id = :tenant AND id = :id",
+                new MapSqlParameterSource().addValue("tenant", tenantId).addValue("id", runId),
+                VIEW).stream().findFirst();
+    }
+
+    @Override
+    public RunPage listByControl(UUID tenantId, String controlCode, int page, int size) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenant", tenantId).addValue("code", controlCode);
+        Integer total = jdbc.queryForObject(
+                "SELECT count(*) FROM ccm_run WHERE tenant_id = :tenant AND control_code = :code",
+                params, Integer.class);
+        params.addValue("size", size).addValue("offset", (long) page * size);
+        List<RunView> items = jdbc.query(
+                VIEW_COLUMNS + " WHERE tenant_id = :tenant AND control_code = :code"
+                        + " ORDER BY started_at DESC LIMIT :size OFFSET :offset",
+                params, VIEW);
+        return new RunPage(items, total == null ? 0 : total);
     }
 }

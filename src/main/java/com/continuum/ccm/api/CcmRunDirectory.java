@@ -1,7 +1,9 @@
 package com.continuum.ccm.api;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -45,9 +47,34 @@ public interface CcmRunDirectory {
             Integer exceptionsCount) {
     }
 
+    /** Projection d'une exécution pour la lecture (mappable vers le contrat {@code CcmRun}). */
+    record RunView(
+            UUID id,
+            String controlCode,
+            Status status,
+            Trigger trigger,
+            OffsetDateTime startedAt,
+            OffsetDateTime finishedAt,
+            Long populationSize,
+            Integer exceptionsCount,
+            String dataSource,
+            String parametersUsedJson,
+            String problemDetail) {
+    }
+
+    /** Page d'exécutions + total (pagination du contrat). */
+    record RunPage(List<RunView> items, int totalItems) {
+    }
+
     /** Enregistre une exécution terminée. */
     void record(RunRecord run);
 
     /** La dernière exécution par code de contrôle, pour un tenant (clé = {@code control_code}). */
     Map<String, LatestRun> latestByControl(UUID tenantId);
+
+    /** Une exécution du tenant par son identifiant, ou vide si inconnue/hors tenant. */
+    Optional<RunView> findById(UUID tenantId, UUID runId);
+
+    /** Page des exécutions d'un contrôle (tri par début décroissant). */
+    RunPage listByControl(UUID tenantId, String controlCode, int page, int size);
 }
