@@ -21,6 +21,11 @@ spring:
       ddl-auto: none
     open-in-view: false
 
+  # Erreurs en RFC 9457 application/problem+json (contrat D32) ; traceId ajoute par ProblemDetailAdvice.
+  mvc:
+    problemdetails:
+      enabled: true
+
   security:
     oauth2:
       resourceserver:
