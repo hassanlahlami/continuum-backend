@@ -49,6 +49,9 @@ class ApplicationBootTest {
         // Pas d'appel réseau OIDC au démarrage : un JwtDecoder de test est fourni ci-dessous.
         registry.add("spring.security.oauth2.resourceserver.jwt.issuer-uri", () -> "");
         registry.add("continuum.audittrail.hmac-key", () -> "boot-test-hmac-key");
+        // Le schéma est appliqué ici par scripts (pas par Flyway) : pas de flyway_schema_history,
+        // donc on neutralise le garde-fou de version de schéma (SchemaVersionVerifier).
+        registry.add("continuum.schema.version-check.enabled", () -> "false");
     }
 
     private static void migrate(String url, String user, String password) {
