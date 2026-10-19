@@ -1,6 +1,7 @@
 package com.continuum;
 
 import java.util.function.Supplier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -27,6 +28,11 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  * <p>Le filtrage réseau (n'exposer {@code /api/admin/**} que depuis le réseau d'administration) est
  * fait à l'ingress, hors de ce code. La sécurité de méthode {@code @PreAuthorize("@authz.can(...)")}
  * (§2.1.7) s'ajoute par-dessus ces portes grossières.
+ *
+ * <p><strong>Surface de déploiement</strong> ({@link DeploymentSurface}, §4.3.2) : la chaîne admin
+ * n'existe que sur la surface {@code admin} ou {@code all}, la chaîne app que sur {@code app} ou
+ * {@code all}. La chaîne par défaut (actuator/public + authentifié) reste toujours présente — y compris
+ * sur un {@code worker} — pour les sondes de santé.
  */
 @Configuration
 @EnableMethodSecurity
@@ -38,6 +44,7 @@ public class SecurityConfig {
 
     @Bean
     @Order(1)
+    @ConditionalOnExpression(DeploymentSurface.ON_ADMIN)
     SecurityFilterChain adminApi(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/admin/**")
@@ -50,6 +57,7 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
+    @ConditionalOnExpression(DeploymentSurface.ON_APP)
     SecurityFilterChain appApi(HttpSecurity http) throws Exception {
         http
                 .securityMatcher("/api/app/**")

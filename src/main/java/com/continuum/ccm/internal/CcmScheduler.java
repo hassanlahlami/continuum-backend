@@ -7,6 +7,7 @@ import com.continuum.ccm.api.CcmRunDirectory.RunRecord;
 import com.continuum.ccm.api.CcmRunDirectory.Trigger;
 import com.continuum.ccm.api.PopulationControlMonitoring;
 import com.continuum.ccm.api.SodMonitoring;
+import com.continuum.DeploymentSurface;
 import com.continuum.tenancy.api.Tenant;
 import com.continuum.tenancy.api.TenancyService;
 import java.time.LocalDate;
@@ -15,6 +16,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -28,8 +30,13 @@ import org.springframework.stereotype.Component;
  * population CBS ({@link PopulationControlMonitoring}, actifs seulement si un CBS est configuré —
  * {@code continuum.cbs.url}). Les paramètres de chaque contrôle viennent de {@link CcmControlDirectory}
  * (CCM-03), jamais du code.
+ *
+ * <p>Actif uniquement sur la <strong>surface {@code worker}</strong> (ou en tout-en-un {@code all}) —
+ * {@link DeploymentSurface} : ainsi, quand l'API est répliquée (surfaces {@code app}/{@code admin}),
+ * un seul type d'instance exécute les travaux de fond, sans doublon d'exceptions ni de {@code ccm_run}.
  */
 @Component
+@ConditionalOnExpression(DeploymentSurface.ON_WORKER)
 class CcmScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(CcmScheduler.class);
