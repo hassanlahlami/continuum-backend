@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.continuum.audittrail.api.AuditEntry;
 import com.continuum.audittrail.api.AuditRecord;
 import com.continuum.audittrail.api.AuditVerification;
+import java.util.ArrayList;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -12,6 +13,12 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.LongStream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -112,5 +119,47 @@ class JdbcAuditTrailServiceTest {
         AuditVerification result = new JdbcAuditTrailService(dataSource, KEY).verify(TENANT);
         assertThat(result.intact()).isFalse();
         assertThat(result.firstBrokenSeq()).isEqualTo(2L);
+    }
+
+    /**
+     * Course sur le {@code seq} : plusieurs threads écrivent simultanément pour le même tenant. La
+     * contrainte {@code UNIQUE (tenant_id, seq)} + le réessai de {@link JdbcAuditTrailService#append}
+     * doivent sérialiser les écritures — aucune perte, {@code seq} contigus de 1..N, chaîne intacte.
+     * (Tenant dédié, indépendant des tests ordonnés ci-dessus.)
+     */
+    @Test
+    @Order(4)
+    void concurrentAppendsForSameTenantSerializeIntoAValidChain() throws Exception {
+        UUID tenant = UUID.fromString("00000000-0000-0000-0000-0000000000c0");
+        JdbcAuditTrailService service = new JdbcAuditTrailService(dataSource, KEY);
+        int threads = 12;
+        int perThread = 10;
+        int total = threads * perThread;
+
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
+        for (int t = 0; t < threads; t++) {
+            final int threadNo = t;
+            futures.add(pool.submit(() -> {
+                start.await();
+                for (int i = 0; i < perThread; i++) {
+                    service.append(new AuditEntry(tenant, ACTOR, "ccm.run", "CONTROL",
+                            "C-" + threadNo + "-" + i, "{\"t\":" + threadNo + ",\"i\":" + i + "}"));
+                }
+                return null;
+            }));
+        }
+        start.countDown(); // top départ simultané
+        for (Future<?> f : futures) {
+            f.get(60, TimeUnit.SECONDS); // propage toute exception (y.c. course non récupérée)
+        }
+        pool.shutdown();
+
+        AuditVerification result = service.verify(tenant);
+        assertThat(result.intact()).isTrue();
+        assertThat(result.count()).isEqualTo(total);
+        assertThat(service.export(tenant)).extracting(AuditRecord::seq)
+                .containsExactlyElementsOf(LongStream.rangeClosed(1, total).boxed().toList());
     }
 }

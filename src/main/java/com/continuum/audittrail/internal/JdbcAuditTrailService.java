@@ -10,7 +10,10 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import javax.sql.DataSource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -23,13 +26,22 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <p>Le {@code payload} est stocké verbatim (TEXT) pour que la vérification recompose exactement
  * l'empreinte. La clé HMAC provient de l'environnement (Vault, §4) — injectée au constructeur.
  *
- * <p>Limite connue : l'attribution du {@code seq} suppose une écriture sérialisée par tenant
- * (verrou/transaction à ajouter côté service applicatif ; hors périmètre de cette brique).
+ * <p>Concurrence : le {@code seq} est attribué par {@code MAX(seq)+1} par tenant. Deux niveaux de
+ * protection : (1) un verrou applicatif <strong>par tenant</strong> sérialise les écritures au sein
+ * d'une même instance (cas dominant — l'« effet de meute » intra-JVM disparaît) ; (2) la contrainte
+ * {@code UNIQUE (tenant_id, seq)} garantit l'intégrité entre instances répliquées, {@link #append}
+ * réessayant alors avec le {@code seq} suivant ({@link #MAX_APPEND_ATTEMPTS} tentatives + petit
+ * délai). La chaîne reste donc contiguë et intacte sous forte concurrence.
  */
 public class JdbcAuditTrailService implements AuditTrailService {
 
+    /** Tentatives d'insertion avant d'abandonner, en cas de course inter-instances sur {@code seq} (§2.3). */
+    private static final int MAX_APPEND_ATTEMPTS = 50;
+
     private final JdbcTemplate jdbc;
     private final byte[] hmacKey;
+    /** Verrous par tenant : sérialise l'attribution du {@code seq} dans cette instance (tenants peu nombreux). */
+    private final ConcurrentHashMap<UUID, Object> tenantLocks = new ConcurrentHashMap<>();
 
     public JdbcAuditTrailService(DataSource dataSource, byte[] hmacKey) {
         this.jdbc = new JdbcTemplate(dataSource);
@@ -38,6 +50,33 @@ public class JdbcAuditTrailService implements AuditTrailService {
 
     @Override
     public long append(AuditEntry entry) {
+        synchronized (tenantLocks.computeIfAbsent(entry.tenantId(), k -> new Object())) {
+            for (int attempt = 1; ; attempt++) {
+                try {
+                    return appendOnce(entry);
+                } catch (DataIntegrityViolationException raceOnSeq) {
+                    // Course inter-instances : une autre instance a pris ce seq pour ce tenant
+                    // (UNIQUE tenant_id, seq). Recalculer MAX(seq)+1 et réessayer ; sinon propager.
+                    if (attempt >= MAX_APPEND_ATTEMPTS) {
+                        throw raceOnSeq;
+                    }
+                    backoff(attempt);
+                }
+            }
+        }
+    }
+
+    /** Petite attente aléatoire entre tentatives pour disperser les collisions (évite l'« effet de meute »). */
+    private static void backoff(int attempt) {
+        try {
+            Thread.sleep(ThreadLocalRandom.current().nextInt(1, Math.min(1 + attempt, 12)));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Écriture du journal d'audit interrompue", e);
+        }
+    }
+
+    private long appendOnce(AuditEntry entry) {
         long seq = 1 + jdbc.queryForObject(
                 "SELECT COALESCE(MAX(seq), 0) FROM audit_event WHERE tenant_id = ?",
                 Long.class, entry.tenantId());
