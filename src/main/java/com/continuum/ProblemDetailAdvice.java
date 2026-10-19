@@ -1,7 +1,5 @@
 package com.continuum;
 
-import java.util.UUID;
-import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -50,15 +48,8 @@ public class ProblemDetailAdvice extends ResponseEntityExceptionHandler {
     /** Ajoute le {@code traceId} requis (id de trace courant s'il existe, sinon référence générée). */
     private static ProblemDetail withTraceId(ProblemDetail pd) {
         if (pd.getProperties() == null || !pd.getProperties().containsKey("traceId")) {
-            pd.setProperty("traceId", currentTraceId());
+            pd.setProperty("traceId", ErrorReference.traceId());
         }
         return pd;
-    }
-
-    private static String currentTraceId() {
-        String traceId = MDC.get("traceId");
-        return (traceId != null && !traceId.isBlank())
-                ? traceId
-                : UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     }
 }

@@ -45,38 +45,44 @@ public class SecurityConfig {
     @Bean
     @Order(1)
     @ConditionalOnExpression(DeploymentSurface.ON_ADMIN)
-    SecurityFilterChain adminApi(HttpSecurity http) throws Exception {
+    SecurityFilterChain adminApi(HttpSecurity http, ProblemSecurityHandler problem) throws Exception {
         http
                 .securityMatcher("/api/admin/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .anyRequest().access(hasAudienceAndAcr(AUDIENCE_ADMIN, ADMIN_MIN_ACR)))
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults())
+                        .authenticationEntryPoint(problem).accessDeniedHandler(problem))
+                .exceptionHandling(e -> e.authenticationEntryPoint(problem).accessDeniedHandler(problem));
         return http.build();
     }
 
     @Bean
     @Order(2)
     @ConditionalOnExpression(DeploymentSurface.ON_APP)
-    SecurityFilterChain appApi(HttpSecurity http) throws Exception {
+    SecurityFilterChain appApi(HttpSecurity http, ProblemSecurityHandler problem) throws Exception {
         http
                 .securityMatcher("/api/app/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .anyRequest().access(hasAudienceAndAcr(AUDIENCE_APP, 0)))
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults())
+                        .authenticationEntryPoint(problem).accessDeniedHandler(problem))
+                .exceptionHandling(e -> e.authenticationEntryPoint(problem).accessDeniedHandler(problem));
         return http.build();
     }
 
     @Bean
     @Order(3)
-    SecurityFilterChain defaultApi(HttpSecurity http) throws Exception {
+    SecurityFilterChain defaultApi(HttpSecurity http, ProblemSecurityHandler problem) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/public/**").permitAll()
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults())
+                        .authenticationEntryPoint(problem).accessDeniedHandler(problem))
+                .exceptionHandling(e -> e.authenticationEntryPoint(problem).accessDeniedHandler(problem));
         return http.build();
     }
 
