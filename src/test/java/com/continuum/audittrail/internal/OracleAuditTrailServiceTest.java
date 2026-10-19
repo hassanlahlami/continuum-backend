@@ -10,8 +10,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.LongStream;
 import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
@@ -117,5 +124,46 @@ class OracleAuditTrailServiceTest {
         AuditVerification result = new OracleAuditTrailService(dataSource, KEY).verify(TENANT);
         assertThat(result.intact()).isFalse();
         assertThat(result.firstBrokenSeq()).isEqualTo(2L);
+    }
+
+    /**
+     * Course sur le {@code seq} (parité PG) : plusieurs threads écrivent simultanément pour le même
+     * tenant. Verrou par tenant + {@code UNIQUE (tenant_id, seq)} + réessai ⇒ aucune perte, {@code seq}
+     * contigus de 1..N, chaîne intacte. (Tenant dédié, indépendant des tests ordonnés.)
+     */
+    @Test
+    @Order(4)
+    void concurrentAppendsForSameTenantSerializeIntoAValidChain() throws Exception {
+        UUID tenant = UUID.fromString("00000000-0000-0000-0000-0000000000c0");
+        OracleAuditTrailService service = new OracleAuditTrailService(dataSource, KEY);
+        int threads = 12;
+        int perThread = 10;
+        int total = threads * perThread;
+
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
+        for (int t = 0; t < threads; t++) {
+            final int threadNo = t;
+            futures.add(pool.submit(() -> {
+                start.await();
+                for (int i = 0; i < perThread; i++) {
+                    service.append(new AuditEntry(tenant, ACTOR, "ccm.run", "CONTROL",
+                            "C-" + threadNo + "-" + i, "{\"t\":" + threadNo + ",\"i\":" + i + "}"));
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (Future<?> f : futures) {
+            f.get(60, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+
+        AuditVerification result = service.verify(tenant);
+        assertThat(result.intact()).isTrue();
+        assertThat(result.count()).isEqualTo(total);
+        assertThat(service.export(tenant)).extracting(AuditRecord::seq)
+                .containsExactlyElementsOf(LongStream.rangeClosed(1, total).boxed().toList());
     }
 }
