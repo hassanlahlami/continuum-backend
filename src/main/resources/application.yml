@@ -26,6 +26,10 @@ spring:
     problemdetails:
       enabled: true
 
+  # Arret progressif (SIGTERM) : les requetes en cours se terminent avant l'arret (deploiements container).
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
   security:
     oauth2:
       resourceserver:
@@ -49,8 +53,17 @@ logging:
     format:
       console: ecs
 
+# Arret progressif active au niveau serveur (couple a spring.lifecycle ci-dessus).
+server:
+  shutdown: graceful
+
 management:
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  endpoint:
+    health:
+      # Groupes de sondes conteneur : /actuator/health/liveness et /actuator/health/readiness.
+      probes:
+        enabled: true
