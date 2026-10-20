@@ -8,6 +8,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.continuum.ProblemSecurityHandler;
 import com.continuum.SecurityConfig;
 import com.continuum.iam.api.AssignmentService;
 import com.continuum.iam.api.AuthorizationService;
@@ -35,7 +36,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * mocké (le moteur est testé sur base réelle par {@code JdbcAuthorizationServiceTest}).
  */
 @WebMvcTest(controllers = {AssignmentsController.class, RolesController.class})
-@Import({SecurityConfig.class, AuthzExpression.class, AopAutoConfiguration.class})
+@Import({SecurityConfig.class, ProblemSecurityHandler.class, AuthzExpression.class, AopAutoConfiguration.class})
 class AdminAuthzFineGrainTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");

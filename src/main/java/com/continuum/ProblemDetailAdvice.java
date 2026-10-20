@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -37,9 +39,19 @@ public class ProblemDetailAdvice extends ResponseEntityExceptionHandler {
         return response;
     }
 
-    /** Filet de sécurité : toute exception non prévue devient un {@code problem+json} 500 enrichi. */
+    /**
+     * Filet de sécurité : toute exception non prévue devient un {@code problem+json} 500 enrichi.
+     *
+     * <p>Les exceptions de <strong>sécurité</strong> ({@link AccessDeniedException} de {@code @PreAuthorize},
+     * {@link AuthenticationException}) sont <strong>relancées</strong> : elles doivent être traitées par
+     * la chaîne Spring Security ({@code ExceptionTranslationFilter} → {@link ProblemSecurityHandler} ⇒
+     * 403/401), pas transformées en 500 ici — sinon les refus d'autorisation deviendraient des 500.
+     */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex) {
+    public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex) throws Exception {
+        if (ex instanceof AccessDeniedException || ex instanceof AuthenticationException) {
+            throw ex;
+        }
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
         pd.setTitle("Erreur interne");
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(withTraceId(pd));

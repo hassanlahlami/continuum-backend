@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.continuum.ProblemSecurityHandler;
 import com.continuum.SecurityConfig;
 import com.continuum.iam.api.AuthorizationService;
 import com.continuum.iam.api.SegregationOfDutiesService;
@@ -29,7 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * est mocké — le moteur lui-même est testé sur base réelle par {@code JdbcAuthorizationServiceTest}.
  */
 @WebMvcTest(controllers = {SecuredTestController.class, SecuredObjectController.class})
-@Import({SecurityConfig.class, AuthzExpression.class})
+@Import({SecurityConfig.class, ProblemSecurityHandler.class, AuthzExpression.class})
 class PreAuthorizeWiringTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");

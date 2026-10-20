@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.continuum.ProblemSecurityHandler;
 import com.continuum.SecurityConfig;
 import com.continuum.iam.api.AssignmentDirectory;
 import com.continuum.iam.api.AssignmentView;
@@ -30,7 +31,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * D32) : chaîne de sécurité app, projection des read models, JSON conforme au contrat. JWT simulé.
  */
 @WebMvcTest(controllers = MeController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, ProblemSecurityHandler.class})
 class MeControllerTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
