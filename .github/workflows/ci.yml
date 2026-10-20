@@ -1,0 +1,24 @@
+# Intégration continue du backend (plan §8). Gate : `mvn verify` — tests unitaires et de tranche
+# (@WebMvcTest, ApplicationContextRunner, MockMvc autonome). Les tests d'intégration sur base réelle
+# sont neutralisés sans `-Dit.db.url`/`-Dit.oracle.url` (ils vivent avec le continuum-migrator, dépôt
+# voisin non présent ici) — voir README et docs/suivi/ETAT.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build & test (mvn verify)
+        run: mvn -B -ntp verify
