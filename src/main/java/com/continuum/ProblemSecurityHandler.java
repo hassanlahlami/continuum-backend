@@ -32,6 +32,8 @@ public class ProblemSecurityHandler implements AuthenticationEntryPoint, AccessD
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
             AuthenticationException authException) throws IOException {
+        // RFC 6750 §3 : une 401 d'une ressource protégée par jeton porteur doit annoncer le schéma.
+        response.setHeader("WWW-Authenticate", "Bearer realm=\"continuum\"");
         write(response, HttpStatus.UNAUTHORIZED, "Authentification requise");
     }
 
