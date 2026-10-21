@@ -1,0 +1,3007 @@
+openapi: 3.1.0
+info:
+  title: Continuum — Admin Système — intégrations, configuration, exploitation, observabilité
+  version: 0.1.0
+  x-status: draft
+  description: |
+    Pages OPS-01 à OPS-16 : connecteurs ERP, prestataires de signature, packs et promotion de configuration, thème, workflows (déploiements, instances), caches (§4.3.4), logs, traces, erreurs et alertes (§10), supervision, journal d'audit, exports, reprise de données, licence et accès de support, services IA. Actions sensibles : motif obligatoire (champ comment) et authentification renforcée (acr ≥ 2).
+servers:
+  - url: /api/admin
+security:
+  - bearer: []
+tags:
+  - name: connectors
+  - name: signature-providers
+  - name: packs
+  - name: theme
+  - name: workflows
+  - name: caches
+  - name: logs
+  - name: alerts
+  - name: health
+  - name: audit-trail
+  - name: exports
+  - name: imports
+  - name: retention
+  - name: license
+  - name: ai
+paths:
+  /connectors:
+    get:
+      tags:
+        - connectors
+      operationId: listConnectors
+      summary: Connecteurs ERP/CBS et leur santé (état du circuit breaker, dernière exécution)
+      x-required-feature: ops.connector.read
+      responses:
+        '200':
+          description: Connecteurs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Connector'
+    post:
+      tags:
+        - connectors
+      operationId: createConnector
+      summary: Déclarer un connecteur (type, endpoint, référence de secret Vault — jamais le secret)
+      x-required-feature: ops.connector.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorInput'
+      responses:
+        '201':
+          description: Connecteur créé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connector'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /connectors/{connectorId}:
+    parameters:
+      - $ref: '#/components/parameters/ConnectorId'
+    get:
+      tags:
+        - connectors
+      operationId: getConnector
+      summary: Configuration d'un connecteur
+      x-required-feature: ops.connector.read
+      responses:
+        '200':
+          description: Connecteur.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connector'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - connectors
+      operationId: updateConnector
+      summary: Modifier la configuration d'un connecteur
+      x-required-feature: ops.connector.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorInput'
+      responses:
+        '200':
+          description: Connecteur à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connector'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /connectors/{connectorId}/actions/{actionCode}:
+    post:
+      tags:
+        - connectors
+      operationId: performConnectorAction
+      summary: Tester la connexion, activer, désactiver, réinitialiser le circuit breaker
+      x-required-feature: ops.connector.manage
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Résultat (connecteur à jour, résultat du test).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connector'
+  /connectors/{connectorId}/mapping:
+    parameters:
+      - $ref: '#/components/parameters/ConnectorId'
+    get:
+      tags:
+        - connectors
+      operationId: getConnectorMapping
+      summary: Correspondance des champs source vers le modèle canonique
+      x-required-feature: ops.connector.read
+      responses:
+        '200':
+          description: Mapping.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorMapping'
+    put:
+      tags:
+        - connectors
+      operationId: updateConnectorMapping
+      summary: Modifier le mapping (validé sur un échantillon avant enregistrement)
+      x-required-feature: ops.connector.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorMapping'
+      responses:
+        '200':
+          description: Mapping enregistré.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorMapping'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /connectors/{connectorId}/executions:
+    get:
+      tags:
+        - connectors
+      operationId: listConnectorExecutions
+      summary: Journal d'exécution (appels, durée, statut, volumes — jamais les données)
+      x-required-feature: ops.connector.read
+      parameters:
+        - $ref: '#/components/parameters/ConnectorId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Exécutions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectorExecutionPage'
+  /canonical-model:
+    get:
+      tags:
+        - connectors
+      operationId: getCanonicalModel
+      summary: Modèle canonique en vigueur — entités et champs **déclarés par le pack sectoriel installé** (§6.2, D35)
+      x-required-feature: ops.connector.read
+      responses:
+        '200':
+          description: Entités canoniques et leurs champs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - entity
+                    - fields
+                  properties:
+                    entity:
+                      type: string
+                      example: MOVEMENT
+                    label:
+                      type: string
+                      example: Mouvement comptable
+                    packCode:
+                      type: string
+                      example: PACK-BANQUE
+                    fields:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - name
+                          - type
+                        properties:
+                          name:
+                            type: string
+                            example: booking_date
+                          label:
+                            type: string
+                          type:
+                            type: string
+                            enum:
+                              - STRING
+                              - NUMBER
+                              - MONEY
+                              - DATE
+                              - DATETIME
+                              - BOOLEAN
+                          required:
+                            type: boolean
+                          sensitive:
+                            type: boolean
+  /signature-providers:
+    get:
+      tags:
+        - signature-providers
+      operationId: listSignatureProviders
+      summary: Prestataires de signature (interne, PKI, prestataires externes)
+      x-required-feature: ops.signature-provider.manage
+      responses:
+        '200':
+          description: Prestataires.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SignatureProvider'
+    post:
+      tags:
+        - signature-providers
+      operationId: createSignatureProvider
+      summary: Déclarer un prestataire de signature
+      x-required-feature: ops.signature-provider.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignatureProvider'
+      responses:
+        '201':
+          description: Prestataire créé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureProvider'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /signature-providers/{providerId}:
+    put:
+      tags:
+        - signature-providers
+      operationId: updateSignatureProvider
+      summary: Modifier un prestataire de signature
+      x-required-feature: ops.signature-provider.manage
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignatureProvider'
+      responses:
+        '200':
+          description: Prestataire à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureProvider'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /packs:
+    get:
+      tags:
+        - packs
+      operationId: listPacks
+      summary: Packs de conformité installés et disponibles (versions)
+      x-required-feature: ops.pack.manage
+      responses:
+        '200':
+          description: Packs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pack'
+  /packs/{packCode}/actions/{actionCode}:
+    post:
+      tags:
+        - packs
+      operationId: performPackAction
+      summary: Installer ou mettre à jour un pack (aperçu des changements, puis application) — opération longue
+      x-required-feature: ops.pack.manage
+      parameters:
+        - name: packCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: PACK-BANQUE
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /configuration-exports:
+    post:
+      tags:
+        - packs
+      operationId: exportConfiguration
+      summary: Exporter le paramétrage d'une entité (JSON signé, versionné) pour promotion recette → production
+      x-required-feature: ops.config.transfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - entityId
+              properties:
+                entityId:
+                  $ref: '#/components/schemas/Id'
+                sections:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - ORG
+                      - POSITIONS
+                      - ROLES
+                      - REFERENTIALS
+                      - WORKFLOWS
+                      - SIGNATURE_POLICIES
+                      - THEME
+                      - LABELS
+                      - CCM_SETTINGS
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+  /configuration-imports:
+    post:
+      tags:
+        - packs
+      operationId: importConfiguration
+      summary: Importer un paramétrage exporté — produit un aperçu des différences, rien n'est appliqué
+      x-required-feature: ops.config.transfer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - entityId
+              properties:
+                file:
+                  type: string
+                  contentEncoding: binary
+                entityId:
+                  $ref: '#/components/schemas/Id'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /configuration-imports/{importId}/actions/{actionCode}:
+    post:
+      tags:
+        - packs
+      operationId: performConfigurationImportAction
+      summary: Appliquer ou abandonner un import de paramétrage (après lecture de l'aperçu)
+      x-required-feature: ops.config.transfer
+      parameters:
+        - name: importId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /theme:
+    get:
+      tags:
+        - theme
+      operationId: getThemeDraft
+      summary: Thème de l'entité (brouillon courant, version publiée, rapport WCAG)
+      x-required-feature: ops.theme.manage
+      parameters:
+        - $ref: '#/components/parameters/EntityQuery'
+      responses:
+        '200':
+          description: Thème.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Theme'
+    put:
+      tags:
+        - theme
+      operationId: updateThemeDraft
+      summary: Modifier le brouillon (tokens DTCG validés par schéma ; pas de CSS libre, §1.6.4)
+      x-required-feature: ops.theme.manage
+      parameters:
+        - $ref: '#/components/parameters/EntityQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - tokens
+              properties:
+                version:
+                  type: integer
+                presetCode:
+                  type: string
+                  example: institutionnel
+                tokens:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Brouillon enregistré, rapport WCAG recalculé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Theme'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /theme/actions/{actionCode}:
+    post:
+      tags:
+        - theme
+      operationId: performThemeAction
+      summary: Créer un lien d'aperçu, publier (refusé si non conforme WCAG), revenir à une version
+      x-required-feature: ops.theme.manage
+      parameters:
+        - $ref: '#/components/parameters/EntityQuery'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Thème à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Theme'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /theme/assets:
+    get:
+      tags:
+        - theme
+      operationId: listThemeAssets
+      summary: Logos, favicon, polices, images de l'entité
+      x-required-feature: ops.theme.manage
+      parameters:
+        - $ref: '#/components/parameters/EntityQuery'
+      responses:
+        '200':
+          description: Ressources.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ThemeAsset'
+    post:
+      tags:
+        - theme
+      operationId: uploadThemeAsset
+      summary: Déposer une ressource graphique (licence obligatoire pour une police)
+      x-required-feature: ops.theme.manage
+      parameters:
+        - $ref: '#/components/parameters/EntityQuery'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - kind
+              properties:
+                file:
+                  type: string
+                  contentEncoding: binary
+                kind:
+                  type: string
+                  enum:
+                    - LOGO
+                    - LOGO_DARK
+                    - LOGO_SMALL
+                    - FAVICON
+                    - LOGIN_IMAGE
+                    - FONT
+                    - REPORT_HEADER
+                licenseNote:
+                  type: string
+      responses:
+        '201':
+          description: Ressource déposée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThemeAsset'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /workflow/deployments:
+    get:
+      tags:
+        - workflows
+      operationId: listWorkflowDeployments
+      summary: Définitions BPMN/DMN déployées et publications en attente
+      x-required-feature: ops.workflow.deploy
+      responses:
+        '200':
+          description: Déploiements.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkflowDeployment'
+    post:
+      tags:
+        - workflows
+      operationId: submitWorkflowDeployment
+      summary: Soumettre un BPMN ou une DMN (lint §6.2.5 exécuté, publication en maker-checker)
+      x-required-feature: ops.workflow.deploy
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - entityId
+              properties:
+                file:
+                  type: string
+                  contentEncoding: binary
+                entityId:
+                  $ref: '#/components/schemas/Id'
+      responses:
+        '201':
+          description: Soumission enregistrée avec son rapport de lint.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDeployment'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /workflow/deployments/{deploymentId}/actions/{actionCode}:
+    post:
+      tags:
+        - workflows
+      operationId: performWorkflowDeploymentAction
+      summary: Simuler, approuver (déployer) ou rejeter une définition — interdit à son auteur
+      x-required-feature: ops.workflow.deploy
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Déploiement à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowDeployment'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /workflow/instances:
+    get:
+      tags:
+        - workflows
+      operationId: listWorkflowInstances
+      summary: Instances de processus (filtre sur incidents, tâches sans candidat, minuteurs en retard)
+      x-required-feature: ops.workflow.operate
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: processKey
+          in: query
+          schema:
+            type: string
+        - name: problem
+          in: query
+          schema:
+            type: string
+            enum:
+              - INCIDENT
+              - NO_CANDIDATE
+              - TIMER_LATE
+      responses:
+        '200':
+          description: Instances.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstancePage'
+  /workflow/instances/{instanceId}/actions/{actionCode}:
+    post:
+      tags:
+        - workflows
+      operationId: performWorkflowInstanceAction
+      summary: Relancer une étape en incident, migrer vers une autre version (plan de correspondance)
+      x-required-feature: ops.workflow.operate
+      parameters:
+        - name: instanceId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Instance à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstance'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /caches:
+    get:
+      tags:
+        - caches
+      operationId: listCaches
+      summary: Régions de cache Ehcache (entrées, mémoire, taux de succès, dernière purge, état par instance)
+      x-required-feature: admin.cache.read
+      responses:
+        '200':
+          description: Régions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CacheRegion'
+    delete:
+      tags:
+        - caches
+      operationId: evictCaches
+      summary: Purger toutes les régions — d'une entité (admin.cache.evict) ou de toute l'installation (admin.cache.evict.all)
+      x-required-feature:
+        - admin.cache.evict
+        - admin.cache.evict.all
+      parameters:
+        - name: entityId
+          in: query
+          description: Absent = purge globale (admin.cache.evict.all, realm opérateur, acr=2).
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/Reason'
+      responses:
+        '200':
+          description: Purge diffusée ; accusés par instance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvictionResult'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /caches/{region}:
+    delete:
+      tags:
+        - caches
+      operationId: evictCacheRegion
+      summary: Purger une région, éventuellement limitée à une entité ou à une entrée
+      x-required-feature: admin.cache.evict
+      parameters:
+        - name: region
+          in: path
+          required: true
+          schema:
+            type: string
+            example: iam-structure
+        - name: entityId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: key
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Reason'
+      responses:
+        '200':
+          description: Purge diffusée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvictionResult'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /caches/warmup:
+    post:
+      tags:
+        - caches
+      operationId: warmupCaches
+      summary: Précharger les paramétrages d'une entité
+      x-required-feature: admin.cache.evict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - entityId
+              properties:
+                entityId:
+                  $ref: '#/components/schemas/Id'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+  /logs/search:
+    post:
+      tags:
+        - logs
+      operationId: searchLogs
+      summary: Rechercher dans les logs techniques ou de sécurité (§10.8) — la consultation est journalisée
+      x-required-feature:
+        - admin.logs.tech.read
+        - admin.logs.security.read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogQuery'
+      responses:
+        '200':
+          description: Résultats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogResultPage'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /logs/saved-queries:
+    get:
+      tags:
+        - logs
+      operationId: listSavedLogQueries
+      summary: Requêtes de logs sauvegardées
+      x-required-feature:
+        - admin.logs.tech.read
+        - admin.logs.security.read
+      responses:
+        '200':
+          description: Requêtes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      $ref: '#/components/schemas/Id'
+                    label:
+                      type: string
+                    query:
+                      $ref: '#/components/schemas/LogQuery'
+    post:
+      tags:
+        - logs
+      operationId: saveLogQuery
+      summary: Sauvegarder une requête de logs
+      x-required-feature:
+        - admin.logs.tech.read
+        - admin.logs.security.read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - label
+                - query
+              properties:
+                label:
+                  type: string
+                query:
+                  $ref: '#/components/schemas/LogQuery'
+      responses:
+        '201':
+          description: Requête sauvegardée.
+  /log-levels:
+    get:
+      tags:
+        - logs
+      operationId: listLogLevels
+      summary: Niveaux de log actifs, dont les surcharges temporaires et leur expiration
+      x-required-feature: admin.logs.level.change
+      responses:
+        '200':
+          description: Niveaux.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LogLevelOverride'
+    post:
+      tags:
+        - logs
+      operationId: overrideLogLevel
+      summary: Activer temporairement un niveau (ex. DEBUG sur un module, une entité, un utilisateur) avec expiration
+      x-required-feature: admin.logs.level.change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogLevelOverride'
+      responses:
+        '201':
+          description: Surcharge active (journalisée CTN-SEC-0010).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogLevelOverride'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /traces/{traceId}:
+    get:
+      tags:
+        - logs
+      operationId: getTrace
+      summary: Vue d'une requête de bout en bout (étapes, durées, logs associés) à partir de la référence d'erreur
+      x-required-feature: admin.logs.tech.read
+      parameters:
+        - name: traceId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-f0-9]{32}$
+      responses:
+        '200':
+          description: Trace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trace'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /errors:
+    get:
+      tags:
+        - alerts
+      operationId: listErrorGroups
+      summary: Erreurs regroupées par code d'événement (occurrences, tendance, instances, runbook)
+      x-required-feature: admin.logs.tech.read
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: Groupes d'erreurs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ErrorGroup'
+  /alert-rules:
+    get:
+      tags:
+        - alerts
+      operationId: listAlertRules
+      summary: Règles d'alerte (code d'événement, seuil, fenêtre, canaux)
+      x-required-feature: admin.alerts.manage
+      responses:
+        '200':
+          description: Règles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlertRule'
+    post:
+      tags:
+        - alerts
+      operationId: createAlertRule
+      summary: Créer une règle d'alerte
+      x-required-feature: admin.alerts.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRule'
+      responses:
+        '201':
+          description: Règle créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRule'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /alert-rules/{ruleId}:
+    parameters:
+      - name: ruleId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    put:
+      tags:
+        - alerts
+      operationId: updateAlertRule
+      summary: Modifier une règle d'alerte
+      x-required-feature: admin.alerts.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRule'
+      responses:
+        '200':
+          description: Règle à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertRule'
+    delete:
+      tags:
+        - alerts
+      operationId: deleteAlertRule
+      summary: Supprimer une règle d'alerte
+      x-required-feature: admin.alerts.manage
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+  /health:
+    get:
+      tags:
+        - health
+      operationId: getPlatformHealth
+      summary: Santé des composants (instances, base, broker, Keycloak, moteur workflow, OpenSearch, prestataires)
+      x-required-feature: ops.health.read
+      responses:
+        '200':
+          description: Santé.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComponentHealth'
+  /scheduled-jobs:
+    get:
+      tags:
+        - health
+      operationId: listScheduledJobs
+      summary: Travaux planifiés (CCM, relances, purges, ré-horodatage) — dernière et prochaine exécution
+      x-required-feature: ops.health.read
+      responses:
+        '200':
+          description: Travaux.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScheduledJob'
+  /scheduled-jobs/{jobCode}/actions/{actionCode}:
+    post:
+      tags:
+        - health
+      operationId: performScheduledJobAction
+      summary: Suspendre, reprendre ou exécuter maintenant un travail planifié
+      x-required-feature: ops.job.manage
+      parameters:
+        - name: jobCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: ccm-nightly
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Travail à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledJob'
+  /audit-trail/events:
+    get:
+      tags:
+        - audit-trail
+      operationId: searchAuditTrail
+      summary: Journal d'audit (qui / quoi / quand / avant-après), recherche multicritère
+      x-required-feature: ops.audittrail.read
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: actorId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: objectType
+          in: query
+          schema:
+            type: string
+        - name: objectId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - name: eventType
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Événements.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventPage'
+  /audit-trail/verifications:
+    post:
+      tags:
+        - audit-trail
+      operationId: verifyAuditTrailIntegrity
+      summary: Vérifier l'intégrité du chaînage HMAC sur une période — opération longue
+      x-required-feature: ops.audittrail.verify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - from
+                - to
+              properties:
+                from:
+                  type: string
+                  format: date-time
+                to:
+                  type: string
+                  format: date-time
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+  /exports:
+    get:
+      tags:
+        - exports
+      operationId: listExports
+      summary: Exports réalisés (incident, réversibilité, journal d'audit), avec leur empreinte
+      x-required-feature: ops.export.manage
+      responses:
+        '200':
+          description: Exports.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExportRecord'
+    post:
+      tags:
+        - exports
+      operationId: requestExportPackage
+      summary: Produire un export signé (incident, réversibilité complète en formats ouverts, journal d'audit) — motif obligatoire
+      x-required-feature:
+        - ops.export.manage
+        - admin.logs.export
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - kind
+                - reason
+              properties:
+                kind:
+                  type: string
+                  enum:
+                    - INCIDENT
+                    - REVERSIBILITY
+                    - AUDIT_TRAIL
+                reason:
+                  type: string
+                  minLength: 10
+                entityId:
+                  $ref: '#/components/schemas/Id'
+                from:
+                  type: string
+                  format: date-time
+                to:
+                  type: string
+                  format: date-time
+                traceId:
+                  type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /import-templates:
+    get:
+      tags:
+        - imports
+      operationId: listImportTemplates
+      summary: Gabarits Excel de reprise (univers d'audit, recommandations ouvertes, missions passées, constats externes, affectations)
+      x-required-feature: ops.import.manage
+      responses:
+        '200':
+          description: Gabarits téléchargeables.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    kind:
+                      type: string
+                      example: OPEN_RECOMMENDATIONS
+                    label:
+                      type: string
+                    version:
+                      type: string
+                    downloadUrl:
+                      type: string
+  /imports:
+    get:
+      tags:
+        - imports
+      operationId: listImports
+      summary: Imports de reprise (en contrôle, prêts, appliqués, abandonnés)
+      x-required-feature: ops.import.manage
+      responses:
+        '200':
+          description: Imports.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ImportRecord'
+    post:
+      tags:
+        - imports
+      operationId: uploadImport
+      summary: Déposer un fichier de reprise — contrôle complet et rapport d'anomalies, rien n'est chargé
+      x-required-feature: ops.import.manage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - kind
+                - entityId
+              properties:
+                file:
+                  type: string
+                  contentEncoding: binary
+                kind:
+                  type: string
+                  enum:
+                    - AUDIT_UNIVERSE
+                    - OPEN_RECOMMENDATIONS
+                    - PAST_MISSIONS
+                    - EXTERNAL_FINDINGS
+                    - ASSIGNMENTS
+                entityId:
+                  $ref: '#/components/schemas/Id'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /imports/{importId}:
+    get:
+      tags:
+        - imports
+      operationId: getImport
+      summary: Rapport de contrôle d'un import (lignes valides, anomalies par ligne et colonne)
+      x-required-feature: ops.import.manage
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: Import.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportRecord'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /imports/{importId}/actions/{actionCode}:
+    post:
+      tags:
+        - imports
+      operationId: performImportAction
+      summary: Appliquer (lignes valides uniquement) ou abandonner un import
+      x-required-feature: ops.import.manage
+      parameters:
+        - $ref: '#/components/parameters/ImportId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /retention-policies:
+    get:
+      tags:
+        - retention
+      operationId: listRetentionPolicies
+      summary: Durées de conservation par type de données et conservations légales en cours (page OPS-17)
+      x-required-feature: ops.retention.read
+      parameters:
+        - $ref: '#/components/parameters/EntityQuery'
+      responses:
+        '200':
+          description: Politiques de rétention.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetentionPolicy'
+    put:
+      tags:
+        - retention
+      operationId: updateRetentionPolicies
+      summary: Modifier les durées de conservation — jamais sous le plancher légal du pack
+      x-required-feature: ops.retention.manage
+      parameters:
+        - $ref: '#/components/parameters/EntityQuery'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - policies
+              properties:
+                version:
+                  type: integer
+                policies:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RetentionPolicy'
+      responses:
+        '200':
+          description: Politiques enregistrées.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetentionPolicy'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /retention-runs:
+    get:
+      tags:
+        - retention
+      operationId: listRetentionRuns
+      summary: Historique des purges et archivages (ce qui a été supprimé, par qui, avec quelle preuve)
+      x-required-feature: ops.retention.read
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Exécutions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetentionRun'
+    post:
+      tags:
+        - retention
+      operationId: startRetentionRun
+      summary: Lancer une simulation (à blanc) ou une purge réelle — motif obligatoire, export signé préalable
+      x-required-feature: ops.retention.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - mode
+                - reason
+              properties:
+                mode:
+                  type: string
+                  enum:
+                    - DRY_RUN
+                    - APPLY
+                reason:
+                  type: string
+                  minLength: 10
+                entityId:
+                  $ref: '#/components/schemas/Id'
+                dataTypes:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '202':
+          $ref: '#/components/responses/JobAccepted'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /legal-holds:
+    get:
+      tags:
+        - retention
+      operationId: listLegalHolds
+      summary: Conservations légales — objets gelés, exemptés de toute purge
+      x-required-feature: ops.retention.read
+      responses:
+        '200':
+          description: Conservations en cours.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LegalHold'
+    post:
+      tags:
+        - retention
+      operationId: createLegalHold
+      summary: Geler des objets (enquête, contentieux, contrôle du régulateur)
+      x-required-feature: ops.retention.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalHold'
+      responses:
+        '201':
+          description: Conservation créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalHold'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /legal-holds/{holdId}/actions/{actionCode}:
+    post:
+      tags:
+        - retention
+      operationId: performLegalHoldAction
+      summary: Lever une conservation légale (motif obligatoire, journalisé)
+      x-required-feature: ops.retention.manage
+      parameters:
+        - name: holdId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Conservation à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalHold'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /license:
+    get:
+      tags:
+        - license
+      operationId: getLicense
+      summary: Licence (titulaire, entités couvertes, échéance, version LTS, fin de support)
+      x-required-feature: ops.license.manage
+      responses:
+        '200':
+          description: Licence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/License'
+    put:
+      tags:
+        - license
+      operationId: installLicense
+      summary: Installer un fichier de licence signé (vérifié hors ligne, D26)
+      x-required-feature: ops.license.manage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  contentEncoding: binary
+      responses:
+        '200':
+          description: Licence installée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/License'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /support-access-requests:
+    get:
+      tags:
+        - license
+      operationId: listSupportAccessRequests
+      summary: Accès de support de l'éditeur (demandés, approuvés, expirés) — §4.4.2
+      x-required-feature: ops.support.approve
+      responses:
+        '200':
+          description: Demandes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportAccessRequest'
+    post:
+      tags:
+        - license
+      operationId: requestSupportAccess
+      summary: Demander un accès de support temporaire (motif, périmètre, durée)
+      x-required-feature: ops.support.request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportAccessRequest'
+      responses:
+        '201':
+          description: Demande enregistrée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccessRequest'
+  /support-access-requests/{requestId}/actions/{actionCode}:
+    post:
+      tags:
+        - license
+      operationId: performSupportAccessAction
+      summary: Approuver, refuser ou révoquer un accès de support
+      x-required-feature: ops.support.approve
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Demande à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportAccessRequest'
+  /ai/services:
+    get:
+      tags:
+        - ai
+      operationId: listAiServices
+      summary: Services IA (lot L5) — activation, modèle déployé, version, santé
+      x-required-feature: ops.ai.manage
+      responses:
+        '200':
+          description: Services.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AiService'
+  /ai/services/{serviceCode}:
+    put:
+      tags:
+        - ai
+      operationId: updateAiService
+      summary: Activer / désactiver un service IA, choisir la version de modèle (registre MLflow)
+      x-required-feature: ops.ai.manage
+      parameters:
+        - name: serviceCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: ai-anomaly
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiService'
+      responses:
+        '200':
+          description: Service à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiService'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ConnectorId:
+      name: connectorId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    ImportId:
+      name: importId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    EntityQuery:
+      name: entityId
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Reason:
+      name: reason
+      in: query
+      required: true
+      description: Motif obligatoire (journalisé).
+      schema:
+        type: string
+        minLength: 10
+    ActionCode:
+      name: actionCode
+      in: path
+      required: true
+      description: Code d'une action disponible (voir availableActions).
+      schema:
+        type: string
+        pattern: ^[a-z][a-z0-9-]*$
+        example: submit-for-review
+    Page:
+      name: page
+      in: query
+      description: Numéro de page (commence à 0).
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      description: Taille de page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    From:
+      name: from
+      in: query
+      description: Date de début (incluse).
+      schema:
+        type: string
+        format: date
+    To:
+      name: to
+      in: query
+      description: Date de fin (incluse).
+      schema:
+        type: string
+        format: date
+  schemas:
+    ConnectorInput:
+      type: object
+      required:
+        - code
+        - kind
+        - endpoint
+      properties:
+        version:
+          type: integer
+        code:
+          type: string
+          example: amplitude-prod
+        kind:
+          type: string
+          enum:
+            - SOAP
+            - REST
+            - JDBC
+            - EVENTS
+        erpType:
+          type: string
+          example: AMPLITUDE
+        endpoint:
+          type: string
+          example: http://amplitude.banque-demo.local:8080/amplitude/services/AccountService
+        secretRef:
+          type: string
+          description: Chemin du secret dans Vault
+          example: secret/continuum/amplitude-prod
+        timeoutMs:
+          type: integer
+          example: 30000
+        retry:
+          type: object
+          properties:
+            maxAttempts:
+              type: integer
+              example: 3
+            backoffMs:
+              type: integer
+              example: 1000
+        entityId:
+          $ref: '#/components/schemas/Id'
+    Connector:
+      allOf:
+        - $ref: '#/components/schemas/ConnectorInput'
+        - type: object
+          required:
+            - id
+            - enabled
+            - health
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            enabled:
+              type: boolean
+            health:
+              type: string
+              enum:
+                - UP
+                - DEGRADED
+                - DOWN
+                - UNKNOWN
+            circuitBreaker:
+              type: string
+              enum:
+                - CLOSED
+                - OPEN
+                - HALF_OPEN
+            lastExecutionAt:
+              type: string
+              format: date-time
+            lastTestResult:
+              type: object
+              properties:
+                success:
+                  type: boolean
+                latencyMs:
+                  type: integer
+                message:
+                  type: string
+            availableActions:
+              type: array
+              items:
+                $ref: '#/components/schemas/AvailableAction'
+    ConnectorMapping:
+      type: object
+      required:
+        - version
+        - entities
+      properties:
+        version:
+          type: integer
+        entities:
+          type: array
+          items:
+            type: object
+            required:
+              - canonicalEntity
+              - fields
+            properties:
+              canonicalEntity:
+                type: string
+                description: Entité du modèle canonique **déclarée par le pack sectoriel** (voir getCanonicalModel) — ex. MOVEMENT en banque, ENGAGEMENT en établissement public (D35).
+                example: MOVEMENT
+              source:
+                type: string
+                example: AMPLITUDE.V_AUDIT_MOUVEMENTS
+              fields:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - canonicalField
+                    - sourceField
+                  properties:
+                    canonicalField:
+                      type: string
+                      example: enteredBy
+                    sourceField:
+                      type: string
+                      example: UTILISATEUR_SAISIE
+                    transform:
+                      type: string
+                      example: trim
+    ConnectorExecutionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  at:
+                    type: string
+                    format: date-time
+                  operation:
+                    type: string
+                    example: GetAccountList
+                  outcome:
+                    type: string
+                    enum:
+                      - SUCCESS
+                      - RETRIED
+                      - FAILED
+                  durationMs:
+                    type: integer
+                  records:
+                    type: integer
+                  eventCode:
+                    type: string
+                    example: CTN-INT-0102
+                  traceId:
+                    type: string
+    SignatureProvider:
+      type: object
+      required:
+        - code
+        - kind
+        - maxLevel
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        version:
+          type: integer
+        code:
+          type: string
+          example: internal-signoff
+        kind:
+          type: string
+          enum:
+            - INTERNAL
+            - INTERNAL_PKI
+            - EXTERNAL
+        maxLevel:
+          type: string
+          enum:
+            - SIMPLE
+            - ADVANCED
+            - QUALIFIED
+        endpoint:
+          type: string
+        secretRef:
+          type: string
+        active:
+          type: boolean
+        health:
+          type: string
+          enum:
+            - UP
+            - DOWN
+            - UNKNOWN
+    Pack:
+      type: object
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: PACK-BANQUE
+        label:
+          type: string
+          example: Pack Banque (BAM
+          LCB-FT: null
+          SoD habilitations): null
+        availableVersion:
+          type: string
+          example: 1.2.0
+        installedVersion:
+          type: string
+          example: 1.1.0
+        installedOn:
+          type: array
+          items:
+            $ref: '#/components/schemas/Id'
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+    Theme:
+      type: object
+      required:
+        - entityId
+        - draftVersion
+      properties:
+        entityId:
+          $ref: '#/components/schemas/Id'
+        draftVersion:
+          type: integer
+        publishedVersion:
+          type: integer
+        presetCode:
+          type: string
+        tokens:
+          type: object
+          additionalProperties: true
+        wcagReport:
+          type: object
+          properties:
+            compliant:
+              type: boolean
+            failures:
+              type: array
+              items:
+                type: object
+                properties:
+                  pair:
+                    type: string
+                    example: on-primary / primary (dark)
+                  ratio:
+                    type: number
+                    example: 3.9
+                  required:
+                    type: number
+                    example: 4.5
+        previewUrl:
+          type: string
+        versions:
+          type: array
+          items:
+            type: object
+            properties:
+              version:
+                type: integer
+              publishedAt:
+                type: string
+                format: date-time
+              publishedBy:
+                $ref: '#/components/schemas/UserSummary'
+    ThemeAsset:
+      type: object
+      required:
+        - id
+        - kind
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          type: string
+        fileName:
+          type: string
+        mediaType:
+          type: string
+        sha256:
+          type: string
+        licenseNote:
+          type: string
+    WorkflowDeployment:
+      type: object
+      required:
+        - id
+        - artifactType
+        - artifactKey
+        - state
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        artifactType:
+          type: string
+          enum:
+            - BPMN
+            - DMN
+        artifactKey:
+          type: string
+          example: mission-inspection
+        state:
+          type: string
+          enum:
+            - SUBMITTED
+            - APPROVED
+            - DEPLOYED
+            - REJECTED
+        engineVersion:
+          type: integer
+        submittedBy:
+          $ref: '#/components/schemas/UserSummary'
+        approvedBy:
+          $ref: '#/components/schemas/UserSummary'
+        lintReport:
+          type: array
+          items:
+            type: object
+            properties:
+              severity:
+                type: string
+                enum:
+                  - ERROR
+                  - WARNING
+              element:
+                type: string
+              message:
+                type: string
+                example: 'userTask approveFinalReport : aucune position ne détient report.final.approve'
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+    WorkflowInstance:
+      type: object
+      required:
+        - id
+        - processKey
+      properties:
+        id:
+          type: string
+        processKey:
+          type: string
+        processVersion:
+          type: integer
+        objectType:
+          type: string
+        objectId:
+          $ref: '#/components/schemas/Id'
+        objectLabel:
+          type: string
+        currentActivity:
+          type: string
+        problem:
+          type: string
+          enum:
+            - NONE
+            - INCIDENT
+            - NO_CANDIDATE
+            - TIMER_LATE
+        problemDetail:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+    WorkflowInstancePage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkflowInstance'
+    CacheRegion:
+      type: object
+      required:
+        - region
+        - entries
+      properties:
+        region:
+          type: string
+          example: iam-structure
+        entries:
+          type: integer
+        heapBytes:
+          type: integer
+        hitRatio:
+          type: number
+        ttl:
+          type: string
+          example: PT1H
+        lastEviction:
+          type: object
+          properties:
+            at:
+              type: string
+              format: date-time
+            by:
+              $ref: '#/components/schemas/UserSummary'
+            reason:
+              type: string
+        instances:
+          type: array
+          items:
+            type: object
+            properties:
+              node:
+                type: string
+                example: backend-app-1
+              entries:
+                type: integer
+    EvictionResult:
+      type: object
+      required:
+        - instancesExpected
+        - instancesAcknowledged
+      properties:
+        instancesExpected:
+          type: integer
+          example: 3
+        instancesAcknowledged:
+          type: integer
+          example: 3
+        missing:
+          type: array
+          items:
+            type: string
+    LogQuery:
+      type: object
+      required:
+        - stream
+        - from
+        - to
+      properties:
+        stream:
+          type: string
+          enum:
+            - TECHNICAL
+            - SECURITY
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        levels:
+          type: array
+          items:
+            type: string
+            enum:
+              - ERROR
+              - WARN
+              - INFO
+              - DEBUG
+              - TRACE
+        eventCodes:
+          type: array
+          items:
+            type: string
+        modules:
+          type: array
+          items:
+            type: string
+        entityCode:
+          type: string
+        node:
+          type: string
+        traceId:
+          type: string
+        text:
+          type: string
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 500
+    LogResultPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                description: Ligne de log au format ECS (§10.3).
+                additionalProperties: true
+    LogLevelOverride:
+      type: object
+      required:
+        - logger
+        - level
+        - expiresIn
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        logger:
+          type: string
+          example: continuum.integration
+        level:
+          type: string
+          enum:
+            - DEBUG
+            - TRACE
+            - INFO
+            - WARN
+            - ERROR
+        entityCode:
+          type: string
+        userId:
+          $ref: '#/components/schemas/Id'
+        expiresIn:
+          type: string
+          example: PT30M
+        expiresAt:
+          type: string
+          format: date-time
+          readOnly: true
+        reason:
+          type: string
+          minLength: 10
+        setBy:
+          $ref: '#/components/schemas/UserSummary'
+    Trace:
+      type: object
+      required:
+        - traceId
+        - spans
+      properties:
+        traceId:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+        outcome:
+          type: string
+          enum:
+            - SUCCESS
+            - ERROR
+        spans:
+          type: array
+          items:
+            type: object
+            properties:
+              spanId:
+                type: string
+              parentSpanId:
+                type: string
+              service:
+                type: string
+                example: continuum-backend
+              name:
+                type: string
+                example: POST /api/app/missions/{id}/findings
+              startOffsetMs:
+                type: integer
+              durationMs:
+                type: integer
+              status:
+                type: string
+                enum:
+                  - OK
+                  - ERROR
+              eventCode:
+                type: string
+        logs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ErrorGroup:
+      type: object
+      required:
+        - eventCode
+        - occurrences
+      properties:
+        eventCode:
+          type: string
+          example: CTN-INT-0102
+        label:
+          type: string
+          example: Appel ERP en échec après les tentatives
+        level:
+          type: string
+          enum:
+            - ERROR
+            - WARN
+        occurrences:
+          type: integer
+        firstSeenAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        nodes:
+          type: array
+          items:
+            type: string
+        trend:
+          type: array
+          items:
+            type: object
+            properties:
+              at:
+                type: string
+                format: date-time
+              count:
+                type: integer
+        runbook:
+          type: string
+          description: Procédure à suivre (Markdown)
+    AlertRule:
+      type: object
+      required:
+        - label
+        - eventCode
+        - threshold
+        - window
+        - channels
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        label:
+          type: string
+          example: CBS indisponible
+        eventCode:
+          type: string
+          example: CTN-INT-0102
+        threshold:
+          type: integer
+          example: 5
+        window:
+          type: string
+          example: PT10M
+        channels:
+          type: array
+          items:
+            type: string
+            enum:
+              - IN_APP
+              - EMAIL
+              - SIEM
+        enabled:
+          type: boolean
+    ComponentHealth:
+      type: object
+      required:
+        - component
+        - status
+      properties:
+        component:
+          type: string
+          example: database
+        node:
+          type: string
+        status:
+          type: string
+          enum:
+            - UP
+            - DEGRADED
+            - DOWN
+        detail:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+        schemaVersions:
+          type: array
+          description: Version de schéma appliquée par entité et version attendue par le build (§4.3.5) — composant database uniquement.
+          items:
+            type: object
+            properties:
+              entityCode:
+                type: string
+                example: BANQUE-DEMO
+              schemaName:
+                type: string
+                example: entity_banque_demo
+              appliedVersion:
+                type: string
+                example: '202609181200'
+              expectedVersion:
+                type: string
+                example: '202609181200'
+              pendingMigrations:
+                type: integer
+                example: 0
+    ScheduledJob:
+      type: object
+      required:
+        - code
+        - label
+        - state
+      properties:
+        code:
+          type: string
+          example: ccm-nightly
+        label:
+          type: string
+          example: Exécution nocturne des contrôles CCM
+        state:
+          type: string
+          enum:
+            - ACTIVE
+            - PAUSED
+            - RUNNING
+            - FAILED
+        cron:
+          type: string
+        lastRunAt:
+          type: string
+          format: date-time
+        lastOutcome:
+          type: string
+          enum:
+            - SUCCESS
+            - FAILURE
+        nextRunAt:
+          type: string
+          format: date-time
+    AuditEventPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/Id'
+                  at:
+                    type: string
+                    format: date-time
+                  actor:
+                    $ref: '#/components/schemas/UserSummary'
+                  eventType:
+                    type: string
+                    example: FINDING_VALIDATED
+                  objectType:
+                    type: string
+                  objectId:
+                    $ref: '#/components/schemas/Id'
+                  before: {}
+                  after: {}
+                  chainHash:
+                    type: string
+    ExportRecord:
+      type: object
+      required:
+        - id
+        - kind
+        - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          type: string
+          enum:
+            - INCIDENT
+            - REVERSIBILITY
+            - AUDIT_TRAIL
+        status:
+          type: string
+          enum:
+            - RUNNING
+            - READY
+            - FAILED
+            - EXPIRED
+        requestedBy:
+          $ref: '#/components/schemas/UserSummary'
+        requestedAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+        sha256:
+          type: string
+        downloadUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    ImportRecord:
+      type: object
+      required:
+        - id
+        - kind
+        - state
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        kind:
+          type: string
+        state:
+          type: string
+          enum:
+            - CHECKING
+            - READY
+            - APPLYING
+            - APPLIED
+            - CANCELLED
+            - FAILED
+        fileName:
+          type: string
+        totalRows:
+          type: integer
+        validRows:
+          type: integer
+        anomalies:
+          type: array
+          items:
+            type: object
+            properties:
+              row:
+                type: integer
+              column:
+                type: string
+              severity:
+                type: string
+                enum:
+                  - ERROR
+                  - WARNING
+              message:
+                type: string
+                example: Échéance au format invalide (attendu AAAA-MM-JJ)
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+    RetentionPolicy:
+      type: object
+      required:
+        - dataType
+        - onlineRetention
+        - action
+      properties:
+        dataType:
+          type: string
+          example: MISSION_FILE
+        label:
+          type: string
+          example: Dossier de mission (rapports
+          papiers de travail: null
+          preuves): null
+        onlineRetention:
+          type: string
+          description: Durée ISO 8601
+          example: P10Y
+        floorRetention:
+          type: string
+          readOnly: true
+          description: Plancher imposé par le pack ou la loi
+          example: P10Y
+        action:
+          type: string
+          enum:
+            - ARCHIVE
+            - PURGE
+            - ARCHIVE_THEN_PURGE
+        archiveExportRequired:
+          type: boolean
+          description: Export signé obligatoire avant suppression
+        lastRunAt:
+          type: string
+          format: date-time
+        eligibleCount:
+          type: integer
+          description: Objets actuellement éligibles à l'action
+    RetentionRun:
+      type: object
+      required:
+        - id
+        - mode
+        - status
+        - startedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        mode:
+          type: string
+          enum:
+            - DRY_RUN
+            - APPLY
+        status:
+          type: string
+          enum:
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+        reason:
+          type: string
+        startedBy:
+          $ref: '#/components/schemas/UserSummary'
+        startedAt:
+          type: string
+          format: date-time
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              dataType:
+                type: string
+              eligible:
+                type: integer
+              archived:
+                type: integer
+              purged:
+                type: integer
+              skippedLegalHold:
+                type: integer
+        exportId:
+          $ref: '#/components/schemas/Id'
+          description: Export signé produit avant la purge
+    LegalHold:
+      type: object
+      required:
+        - scope
+        - reason
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        scope:
+          type: object
+          required:
+            - objectType
+          properties:
+            objectType:
+              type: string
+              example: MISSION
+            objectIds:
+              type: array
+              items:
+                $ref: '#/components/schemas/Id'
+            unitId:
+              $ref: '#/components/schemas/Id'
+            from:
+              type: string
+              format: date
+            to:
+              type: string
+              format: date
+        reason:
+          type: string
+          minLength: 10
+          example: Contrôle du régulateur — lettre de suite 2026/034
+        requestedBy:
+          $ref: '#/components/schemas/UserSummary'
+        createdAt:
+          type: string
+          format: date-time
+        releasedAt:
+          type: string
+          format: date-time
+        active:
+          type: boolean
+    License:
+      type: object
+      properties:
+        licensee:
+          type: string
+        entitiesCovered:
+          type: integer
+        validUntil:
+          type: string
+          format: date
+        productVersion:
+          type: string
+        ltsVersion:
+          type: string
+        supportEndsOn:
+          type: string
+          format: date
+        signatureValid:
+          type: boolean
+    SupportAccessRequest:
+      type: object
+      required:
+        - reason
+        - scope
+        - duration
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        reason:
+          type: string
+          minLength: 10
+        scope:
+          type: string
+          enum:
+            - TECHNICAL_ONLY
+            - TECHNICAL_AND_CONFIG
+        duration:
+          type: string
+          example: PT4H
+        state:
+          type: string
+          enum:
+            - REQUESTED
+            - APPROVED
+            - REJECTED
+            - ACTIVE
+            - EXPIRED
+            - REVOKED
+        requestedBy:
+          $ref: '#/components/schemas/UserSummary'
+        approvedBy:
+          $ref: '#/components/schemas/UserSummary'
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    AiService:
+      type: object
+      required:
+        - code
+        - enabled
+      properties:
+        code:
+          type: string
+          example: ai-anomaly
+        label:
+          type: string
+        enabled:
+          type: boolean
+        modelName:
+          type: string
+        modelVersion:
+          type: string
+        health:
+          type: string
+          enum:
+            - UP
+            - DOWN
+            - UNKNOWN
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+    AvailableAction:
+      type: object
+      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: submit-for-review
+        label:
+          type: string
+          example: Soumettre à la revue
+        style:
+          type: string
+          enum:
+            - primary
+            - secondary
+            - danger
+          default: secondary
+        requiresComment:
+          type: boolean
+          default: false
+        requiresSignature:
+          type: boolean
+          default: false
+        requiresStepUp:
+          type: boolean
+          default: false
+          description: Authentification renforcée (acr=2) exigée
+        confirmationMessage:
+          type: string
+          description: Message de confirmation à afficher avant exécution
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    ActionRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 4000
+        payload:
+          type: object
+          additionalProperties: true
+          description: Données propres à l'action (ex. motif de refus, destinataires).
+    PageMeta:
+      type: object
+      required:
+        - page
+        - size
+        - totalItems
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          example: 25
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 42
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 2
+    Job:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        type:
+          type: string
+          example: REPORT_GENERATION
+        status:
+          type: string
+          enum:
+            - QUEUED
+            - RUNNING
+            - SUCCEEDED
+            - FAILED
+            - CANCELLED
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        resultUrl:
+          type: string
+          description: Lien vers le résultat quand status = SUCCEEDED
+        problem:
+          $ref: '#/components/schemas/Problem'
+    UserSummary:
+      type: object
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+          example: Inspecteur Un
+        positionLabel:
+          type: string
+          description: Position principale courante (libellé du tenant)
+          example: Inspecteur
+        unitLabel:
+          type: string
+          example: Département Inspection du Réseau
+  responses:
+    ValidationFailed:
+      description: Données invalides — détail par champ dans errors[].
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/validation
+            title: Données invalides
+            status: 422
+            code: CTN-AUD-0422
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+            errors:
+              - field: plannedEnd
+                code: date.before-start
+                message: La date de fin doit être postérieure à la date de début.
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflit de version (l'objet a changé) ou état incompatible avec l'action.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    JobAccepted:
+      description: Opération longue acceptée — suivre le Job.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Job'
+    Forbidden:
+      description: Fonctionnalité non détenue sur cette portée, ou refus de séparation des tâches (code CTN-IAM-0210).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/sod-violation
+            title: Séparation des tâches
+            status: 403
+            detail: Vous avez rédigé ce constat ; sa validation doit être faite par une autre personne.
+            code: CTN-IAM-0210
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+            sodRule: NOT_CREATOR
+    TooManyRequests:
+      description: Trop de requêtes (limitation de débit).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NoContent:
+      description: Opération réussie, sans contenu.
