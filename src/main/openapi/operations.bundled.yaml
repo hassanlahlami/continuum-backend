@@ -1612,7 +1612,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/AiService'
+                  $ref: '#/components/schemas/AiServiceConfig'
   /ai/services/{serviceCode}:
     put:
       tags:
@@ -1632,14 +1632,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AiService'
+              $ref: '#/components/schemas/AiServiceConfig'
       responses:
         '200':
           description: Service à jour.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AiService'
+                $ref: '#/components/schemas/AiServiceConfig'
 components:
   securitySchemes:
     bearer:
@@ -2751,7 +2751,7 @@ components:
         endsAt:
           type: string
           format: date-time
-    AiService:
+    AiServiceConfig:
       type: object
       required:
         - code
