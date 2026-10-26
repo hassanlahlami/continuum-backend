@@ -1614,6 +1614,10 @@ components:
                 $ref: '#/components/schemas/Id'
               message:
                 type: string
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
     AssignmentInput:
       type: object
       required:
@@ -2003,24 +2007,6 @@ components:
         fr: Inspection d'agence
         ar: تفتيش الوكالة
         en: Branch inspection
-    Ref:
-      type: object
-      description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
-      required:
-        - code
-        - label
-      properties:
-        code:
-          type: string
-          example: HIGH
-        label:
-          type: string
-          description: Libellé dans la langue de l'utilisateur
-          example: Élevée
-        color:
-          type: string
-          description: Token de couleur sémantique (§1.6), jamais une couleur en dur
-          example: criticality-high
     AvailableAction:
       type: object
       description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
@@ -2054,6 +2040,24 @@ components:
         confirmationMessage:
           type: string
           description: Message de confirmation à afficher avant exécution
+    Ref:
+      type: object
+      description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: HIGH
+        label:
+          type: string
+          description: Libellé dans la langue de l'utilisateur
+          example: Élevée
+        color:
+          type: string
+          description: Token de couleur sémantique (§1.6), jamais une couleur en dur
+          example: criticality-high
   responses:
     JobAccepted:
       description: Opération longue acceptée — suivre le Job.

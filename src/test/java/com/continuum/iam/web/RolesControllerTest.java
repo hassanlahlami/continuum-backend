@@ -1,10 +1,18 @@
 package com.continuum.iam.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.continuum.audittrail.api.AuditTrailService;
 import com.continuum.audittrail.internal.JdbcAuditTrailService;
+import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.ScopedFeature;
+import com.continuum.iam.internal.JdbcAuthorizationService;
+import com.continuum.iam.internal.JdbcRoleDirectory;
 import com.continuum.iam.internal.JdbcRoleService;
+import com.continuum.iam.internal.JdbcSodRuleDirectory;
+import gen.admin.iam.model.AvailableAction;
 import gen.admin.iam.model.LocalizedText;
 import gen.admin.iam.model.Role;
 import gen.admin.iam.model.RoleInput;
@@ -13,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
@@ -68,7 +77,9 @@ class RolesControllerTest {
         run(new FileSystemResource(pg.resolve("V202609301100__entity_audit_trail.sql")));
 
         AuditTrailService audit = new JdbcAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8));
-        controller = new RolesController(new JdbcRoleService(dataSource, audit));
+        controller = new RolesController(new JdbcRoleService(dataSource, audit),
+                new JdbcRoleDirectory(dataSource), new JdbcSodRuleDirectory(dataSource),
+                new JdbcAuthorizationService(dataSource));
     }
 
     private static void run(Resource script) {
@@ -115,5 +126,42 @@ class RolesControllerTest {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM audit_event WHERE action = 'admin.role.manage' AND object_id = ?",
                 Integer.class, body.getId().toString())).isEqualTo(1);
+    }
+
+    @Test
+    void matrixExposesGrantsAndStaticSodWarnings() {
+        authenticateAs(ACTOR);
+        UUID role = UUID.randomUUID();
+        jdbc.update("INSERT INTO role (id, tenant_id, code, label, kind) VALUES (?, ?, 'MATRIX_ROLE', '{\"fr\":\"M\"}'::jsonb, 'ORGANISATIONAL')",
+                role, TENANT);
+        jdbc.update("INSERT INTO role_feature (role_id, feature_code) VALUES (?, 'mission.order.write')", role);
+        jdbc.update("INSERT INTO role_feature (role_id, feature_code) VALUES (?, 'mission.order.approve')", role);
+        UUID rule = UUID.randomUUID();
+        jdbc.update("INSERT INTO sod_rule (id, tenant_id, feature_a, feature_b, type, severity) VALUES (?, ?, 'mission.order.write', 'mission.order.approve', 'STATIC', 'BLOCK')",
+                rule, TENANT);
+
+        var matrix = controller.getRoleFeatureMatrix().getBody();
+
+        assertThat(matrix).isNotNull();
+        assertThat(matrix.getFeatures()).isNotEmpty();
+        assertThat(matrix.getGrants()).filteredOn(g -> g.getRoleId().equals(role)).hasSize(2);
+        assertThat(matrix.getSodWarnings()).anyMatch(w -> w.getRoleId().equals(role) && w.getRuleId().equals(rule));
+        assertThat(controller.listRoles().getBody()).anyMatch(r -> r.getId().equals(role) && r.getFeatureCodes().size() == 2);
+        assertThat(controller.listFeatures().getBody()).isNotEmpty();
+    }
+
+    @Test
+    void matrixOffersUpdateMatrixOnlyToRoleManagers() {
+        AuthorizationService authz = mock(AuthorizationService.class);
+        when(authz.permissions(TENANT, ACTOR)).thenReturn(List.of(new ScopedFeature("admin.role.manage", "TENANT", null)));
+        RolesController manager = new RolesController(null, new JdbcRoleDirectory(dataSource),
+                new JdbcSodRuleDirectory(dataSource), authz);
+        authenticateAs(ACTOR);
+
+        assertThat(manager.getRoleFeatureMatrix().getBody().getAvailableActions())
+                .extracting(AvailableAction::getCode).containsExactly("update-matrix");
+
+        when(authz.permissions(TENANT, ACTOR)).thenReturn(List.of(new ScopedFeature("admin.role.read", "TENANT", null)));
+        assertThat(manager.getRoleFeatureMatrix().getBody().getAvailableActions()).isEmpty();
     }
 }

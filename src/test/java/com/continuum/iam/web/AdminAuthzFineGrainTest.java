@@ -57,6 +57,10 @@ class AdminAuthzFineGrainTest {
     @MockitoBean
     private RoleService roleService;
     @MockitoBean
+    private com.continuum.iam.api.RoleDirectory roleDirectory;
+    @MockitoBean
+    private com.continuum.iam.api.SodRuleDirectory sodRuleDirectory;
+    @MockitoBean
     private JwtDecoder jwtDecoder; // requis par le resource server ; non invoqué (JWT simulé)
 
     private static final String ASSIGNMENT_JSON = """
