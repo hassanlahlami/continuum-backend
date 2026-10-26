@@ -4,24 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.continuum.ccm.api.CcmExceptionDirectory;
 import com.continuum.ccm.api.CcmExceptionDirectory.Filter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.SQLException;
+import com.continuum.testsupport.OracleTestSchema;
 import java.util.List;
 import java.util.UUID;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.EncodedResource;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /**
  * Vérifie le read model des exceptions CCM (§5.3) sur une <strong>vraie base Oracle</strong> (D4), à
@@ -44,40 +34,19 @@ class OracleCcmExceptionDirectoryTest {
 
     @BeforeAll
     static void applyAndSeed() {
-        String url = System.getProperty("it.oracle.url");
-        Path oracle = Path.of("..", "continuum-migrator", "src", "main", "resources", "db", "oracle")
-                .toAbsolutePath().normalize();
-        Assumptions.assumeTrue(Files.isDirectory(oracle), "Scripts Oracle du migrateur introuvables : " + oracle);
+        OracleTestSchema db = OracleTestSchema.connect().reset();
+        dataSource = db.dataSource();
 
-        dataSource = new DriverManagerDataSource(
-                url, System.getProperty("it.oracle.user"), System.getProperty("it.oracle.password"));
-        dataSource.setDriverClassName("oracle.jdbc.OracleDriver");
-        JdbcTemplate jt = new JdbcTemplate(dataSource);
-        jt.execute("""
-                BEGIN
-                  FOR t IN (SELECT table_name FROM user_tables) LOOP
-                    EXECUTE IMMEDIATE 'DROP TABLE "' || t.table_name || '" CASCADE CONSTRAINTS PURGE';
-                  END LOOP;
-                END;
-                """);
-        run(new FileSystemResource(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091200__entity_mission.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091300__entity_finding.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091500__finding_frap.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610121000__ccm_exception.sql")));
-        run(new ClassPathResource("ccm-triage-oracle-seed.sql"));
+        db.platform("V202609300900__platform_feature_catalog.sql");
+        db.platform("R__feature_catalog.sql");
+        db.entity("V202609301000__entity_iam_structure.sql");
+        db.entity("V202610091200__entity_mission.sql");
+        db.entity("V202610091300__entity_finding.sql");
+        db.entity("V202610091500__finding_frap.sql");
+        db.entity("V202610121000__ccm_exception.sql");
+        db.seed(new ClassPathResource("ccm-triage-oracle-seed.sql"));
 
         directory = new OracleCcmExceptionDirectory(dataSource);
-    }
-
-    private static void run(Resource script) {
-        try (Connection c = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(c, new EncodedResource(script, StandardCharsets.UTF_8));
-        } catch (SQLException e) {
-            throw new IllegalStateException("script " + script, e);
-        }
     }
 
     private static Filter all() {

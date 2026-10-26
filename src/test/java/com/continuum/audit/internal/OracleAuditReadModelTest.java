@@ -4,22 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.continuum.audit.api.FindingDirectory;
 import com.continuum.audit.api.MissionDirectory;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.SQLException;
+import com.continuum.testsupport.OracleTestSchema;
 import java.util.UUID;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.EncodedResource;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /**
  * Vérifie les read models <strong>Oracle</strong> missions/constats (§6, D4) sur une vraie base Oracle :
@@ -37,14 +28,8 @@ class OracleAuditReadModelTest {
 
     @BeforeAll
     static void applyAndSeed() {
-        String url = System.getProperty("it.oracle.url");
-        Path oracle = Path.of("..", "continuum-migrator", "src", "main", "resources", "db", "oracle")
-                .toAbsolutePath().normalize();
-        Assumptions.assumeTrue(Files.isDirectory(oracle), "Scripts Oracle du migrateur introuvables : " + oracle);
-
-        dataSource = new DriverManagerDataSource(
-                url, System.getProperty("it.oracle.user"), System.getProperty("it.oracle.password"));
-        dataSource.setDriverClassName("oracle.jdbc.OracleDriver");
+        OracleTestSchema db = OracleTestSchema.connect().reset();
+        dataSource = db.dataSource();
 
         // Schéma Oracle persistant entre exécutions : on repart d'un schéma propre.
         new org.springframework.jdbc.core.JdbcTemplate(dataSource).execute("""
@@ -55,21 +40,13 @@ class OracleAuditReadModelTest {
                 END;
                 """);
 
-        run(new FileSystemResource(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091200__entity_mission.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091300__entity_finding.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091500__finding_frap.sql")));
-        run(new ClassPathResource("audit-oracle-read-seed.sql"));
-    }
-
-    private static void run(Resource script) {
-        try (Connection c = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(c, new EncodedResource(script, StandardCharsets.UTF_8));
-        } catch (SQLException e) {
-            throw new IllegalStateException("script " + script, e);
-        }
+        db.platform("V202609300900__platform_feature_catalog.sql");
+        db.platform("R__feature_catalog.sql");
+        db.entity("V202609301000__entity_iam_structure.sql");
+        db.entity("V202610091200__entity_mission.sql");
+        db.entity("V202610091300__entity_finding.sql");
+        db.entity("V202610091500__finding_frap.sql");
+        db.seed(new ClassPathResource("audit-oracle-read-seed.sql"));
     }
 
     @Test

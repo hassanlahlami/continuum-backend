@@ -82,8 +82,14 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+      # ADR 0012 : schéma partagé PLATFORM + compte entité, sans privilège ANY (script DBA du migrateur).
+      - name: Provision PLATFORM and entity owners (DBA script of the migrator)
+        run: >-
+          docker exec -i -e PLATFORM_PASSWORD=dev-platform -e ENTITY_USER=CONTINUUM -e ENTITY_PASSWORD=continuum
+          ${{ job.services.oracle.id }} bash -s < ../continuum-migrator/ops/oracle-provision.sh
       - name: Oracle parity tests
         run: >-
           mvn -B -ntp test -Dtest='Oracle*Test'
           -Dit.oracle.url=jdbc:oracle:thin:@//localhost:1521/FREEPDB1
           -Dit.oracle.user=CONTINUUM -Dit.oracle.password=continuum
+          -Dit.oracle.platform.user=PLATFORM -Dit.oracle.platform.password=dev-platform
