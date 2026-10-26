@@ -39,6 +39,9 @@ spring:
 
 # Profil de deploiement : all | app | admin | worker (§4.3.2).
 continuum:
+  internal:
+    # Client Keycloak (compte de service) autorise a appeler /internal/** (client credentials).
+    client-id: ${CONTINUUM_INTERNAL_CLIENT_ID:continuum-keycloak}
   surface: ${CONTINUUM_SURFACE:all}
   db:
     # Dialecte du moteur d'autorisation (D4) : postgresql | oracle.

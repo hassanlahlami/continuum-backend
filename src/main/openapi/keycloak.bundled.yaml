@@ -1,0 +1,58 @@
+openapi: 3.1.0
+info:
+  title: Continuum — API interne (Keycloak SPI)
+  version: 0.1.0
+  x-status: draft
+  description: |
+    Appels service-à-service du SPI Keycloak vers le backend (§4.5.2), en client credentials (client `continuum-keycloak`). Non exposée aux frontends ; non routée par l'ingress public.
+servers:
+  - url: /internal
+tags:
+  - name: accounts
+paths:
+  /accounts/{continuumUserId}/status:
+    get:
+      tags:
+        - accounts
+      operationId: getAccountLoginStatus
+      summary: Un compte peut-il ouvrir une session ? (AccountStatusAuthenticator)
+      description: |
+        Refus si le compte n'a aucune affectation active ou si le tenant est suspendu. Les attributs `tenant_id` / `continuum_user_id` / `authz_version` du jeton viennent des attributs utilisateur Keycloak de mêmes noms (TenantClaimMapper).
+      parameters:
+        - name: continuumUserId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Décision de connexion
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - allowed
+                properties:
+                  allowed:
+                    type: boolean
+                  reason:
+                    type: string
+                    description: Code machine du refus (jamais un libellé), absent si allowed.
+                    enum:
+                      - NO_ACTIVE_ASSIGNMENT
+                      - TENANT_SUSPENDED
+                      - ACCOUNT_DISABLED
+                      - UNKNOWN_ACCOUNT
+        '401':
+          description: Jeton de service absent ou invalide
+        '403':
+          description: Client non autorisé
+components: {}

@@ -284,6 +284,32 @@
               </configOptions>
             </configuration>
           </execution>
+          <execution>
+            <id>generate-internal-keycloak</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/internal/keycloak.yaml.
+                   Régénérer via `npx @redocly/cli bundle internal/keycloak.yaml -o …/src/main/openapi/keycloak.bundled.yaml`. -->
+              <inputSpec>src/main/openapi/keycloak.bundled.yaml</inputSpec>
+              <generatorName>spring</generatorName>
+              <library>spring-boot</library>
+              <apiPackage>gen.internal.keycloak.api</apiPackage>
+              <modelPackage>gen.internal.keycloak.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <interfaceOnly>true</interfaceOnly>
+                <useSpringBoot3>true</useSpringBoot3>
+                <useTags>true</useTags>
+                <documentationProvider>none</documentationProvider>
+                <openApiNullable>false</openApiNullable>
+                <useJakartaEe>true</useJakartaEe>
+                <skipDefaultInterface>false</skipDefaultInterface>
+              </configOptions>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
       <plugin>

@@ -1,6 +1,7 @@
 package com.continuum;
 
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +23,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  *   <li>{@code /api/admin/**} : jeton d'audience {@code continuum-admin} <strong>et</strong> niveau
  *       d'authentification élevé ({@code acr} ≥ 2, MFA forte) ;</li>
  *   <li>{@code /api/app/**} : jeton d'audience {@code continuum-app} ;</li>
+ *   <li>{@code /internal/**} : appels service-a-service du SPI Keycloak (client credentials, {@code azp}) ;</li>
  *   <li>reste : {@code /actuator/health|info} et {@code /api/public/**} ouverts, sinon authentifié.</li>
  * </ul>
  *
@@ -72,6 +74,25 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * API interne service-a-service (SPI Keycloak, {@code internal/keycloak.yaml}) : jeton
+     * <em>client credentials</em> dont l'{@code azp} est le client de service configure
+     * ({@code continuum.internal.client-id}). Jeton absent/invalide : 401 ; autre client : 403.
+     */
+    @Bean
+    @Order(0)
+    SecurityFilterChain internalApi(HttpSecurity http, ProblemSecurityHandler problem,
+            @Value("${continuum.internal.client-id:continuum-keycloak}") String clientId) throws Exception {
+        http
+                .securityMatcher("/internal/**")
+                .csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth.anyRequest().access(hasAuthorizedParty(clientId)))
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults())
+                        .authenticationEntryPoint(problem).accessDeniedHandler(problem))
+                .exceptionHandling(e -> e.authenticationEntryPoint(problem).accessDeniedHandler(problem));
+        return http.build();
+    }
+
     @Bean
     @Order(3)
     SecurityFilterChain defaultApi(HttpSecurity http, ProblemSecurityHandler problem) throws Exception {
@@ -96,6 +117,18 @@ public class SecurityConfig {
                     && jwt.getAudience() != null
                     && jwt.getAudience().contains(audience)
                     && acr(jwt) >= minAcr;
+            return new AuthorizationDecision(granted);
+        };
+    }
+
+    /** Exige un JWT emis pour le client {@code azp} donne (compte de service, sans utilisateur). */
+    private static AuthorizationManager<RequestAuthorizationContext> hasAuthorizedParty(String clientId) {
+        return (Supplier<Authentication> authentication, RequestAuthorizationContext context) -> {
+            Authentication a = authentication.get();
+            boolean granted = a != null
+                    && a.isAuthenticated()
+                    && a.getPrincipal() instanceof Jwt jwt
+                    && clientId.equals(jwt.getClaimAsString("azp"));
             return new AuthorizationDecision(granted);
         };
     }
