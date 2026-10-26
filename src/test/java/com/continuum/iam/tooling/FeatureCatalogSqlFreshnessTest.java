@@ -29,7 +29,7 @@ class FeatureCatalogSqlFreshnessTest {
 
     @Test
     void oracleCatalogMatchesRegistry() throws IOException {
-        assertMatches("oracle/R__feature_catalog.sql", FeatureCatalogSqlGenerator.oracle());
+        assertMatches("oracle/platform/R__feature_catalog.sql", FeatureCatalogSqlGenerator.oracle());
     }
 
     private static void assertMatches(String relative, String generated) throws IOException {
