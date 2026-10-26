@@ -1318,6 +1318,10 @@ components:
               description: Isolation physique (§4.7)
             usersCount:
               type: integer
+            availableActions:
+              type: array
+              items:
+                $ref: '#/components/schemas/AvailableAction'
     UserAccount:
       type: object
       required:
@@ -1847,6 +1851,39 @@ components:
       type: string
       format: uuid
       example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+    AvailableAction:
+      type: object
+      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: submit-for-review
+        label:
+          type: string
+          example: Soumettre à la revue
+        style:
+          type: string
+          enum:
+            - primary
+            - secondary
+            - danger
+          default: secondary
+        requiresComment:
+          type: boolean
+          default: false
+        requiresSignature:
+          type: boolean
+          default: false
+        requiresStepUp:
+          type: boolean
+          default: false
+          description: Authentification renforcée (acr=2) exigée
+        confirmationMessage:
+          type: string
+          description: Message de confirmation à afficher avant exécution
     Problem:
       type: object
       description: Erreur RFC 9457 enrichie (contracts/README.md §6).
@@ -2017,39 +2054,6 @@ components:
         fr: Inspection d'agence
         ar: تفتيش الوكالة
         en: Branch inspection
-    AvailableAction:
-      type: object
-      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
-      required:
-        - code
-        - label
-      properties:
-        code:
-          type: string
-          example: submit-for-review
-        label:
-          type: string
-          example: Soumettre à la revue
-        style:
-          type: string
-          enum:
-            - primary
-            - secondary
-            - danger
-          default: secondary
-        requiresComment:
-          type: boolean
-          default: false
-        requiresSignature:
-          type: boolean
-          default: false
-        requiresStepUp:
-          type: boolean
-          default: false
-          description: Authentification renforcée (acr=2) exigée
-        confirmationMessage:
-          type: string
-          description: Message de confirmation à afficher avant exécution
     Ref:
       type: object
       description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
