@@ -1,11 +1,14 @@
 package com.continuum.iam.web;
 
 import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.SodConflictDirectory;
 import com.continuum.iam.api.SodRuleDirectory;
 import com.continuum.iam.api.SodRuleView;
 import gen.admin.iam.api.SodApi;
 import gen.admin.iam.model.AvailableAction;
+import gen.admin.iam.model.ListSodConflicts200ResponseInner;
 import gen.admin.iam.model.SodRule;
+import gen.admin.iam.model.UserSummary;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -32,10 +35,13 @@ public class SodRulesController implements SodApi {
     static final String ACTION_DELETE = "delete";
 
     private final SodRuleDirectory sodRules;
+    private final SodConflictDirectory sodConflicts;
     private final AuthorizationService authorization;
 
-    public SodRulesController(SodRuleDirectory sodRules, AuthorizationService authorization) {
+    public SodRulesController(
+            SodRuleDirectory sodRules, SodConflictDirectory sodConflicts, AuthorizationService authorization) {
         this.sodRules = sodRules;
+        this.sodConflicts = sodConflicts;
         this.authorization = authorization;
     }
 
@@ -43,11 +49,33 @@ public class SodRulesController implements SodApi {
     public ResponseEntity<List<SodRule>> listSodRules() {
         Jwt jwt = currentJwt();
         UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
-        boolean canManage = authorization.permissions(tenant, uuidClaim(jwt, CLAIM_USER)).stream()
-                .anyMatch(f -> FEATURE_MANAGE.equals(f.featureCode()));
+        boolean canManage = canManage(jwt, tenant);
         List<SodRule> body = sodRules.listRules(tenant).stream()
                 .map(v -> toModel(v, canManage)).toList();
         return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Cumuls interdits statiques constatés. L'annuaire des identités n'est pas dans ce module : le
+     * nom affiché de l'utilisateur est son identifiant tant qu'aucun annuaire n'est exposé.
+     */
+    @Override
+    public ResponseEntity<List<ListSodConflicts200ResponseInner>> listSodConflicts() {
+        Jwt jwt = currentJwt();
+        UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
+        boolean canManage = canManage(jwt, tenant);
+        List<ListSodConflicts200ResponseInner> body = sodConflicts.listStaticConflicts(tenant).stream()
+                .map(c -> new ListSodConflicts200ResponseInner()
+                        .user(new UserSummary(c.userId(), c.userId().toString()))
+                        .rule(toModel(c.rule(), canManage))
+                        .viaAssignments(c.viaAssignments()))
+                .toList();
+        return ResponseEntity.ok(body);
+    }
+
+    private boolean canManage(Jwt jwt, UUID tenant) {
+        return authorization.permissions(tenant, uuidClaim(jwt, CLAIM_USER)).stream()
+                .anyMatch(f -> FEATURE_MANAGE.equals(f.featureCode()));
     }
 
     /** Une règle du pack se modifie mais ne se supprime pas ; sans droit de gestion, aucune action. */

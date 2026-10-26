@@ -8,7 +8,9 @@ import static org.mockito.Mockito.when;
 
 import com.continuum.iam.api.AuthorizationService;
 import com.continuum.iam.api.ScopedFeature;
+import com.continuum.iam.internal.JdbcSodConflictDirectory;
 import com.continuum.iam.internal.JdbcSodRuleDirectory;
+import gen.admin.iam.model.ListSodConflicts200ResponseInner;
 import gen.admin.iam.model.SodRule;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -78,7 +80,9 @@ class SodRulesControllerTest {
 
         jt.update("UPDATE sod_rule SET from_pack = TRUE WHERE id = ?", PACK_RULE);
         authz = mock(AuthorizationService.class);
-        controller = new SodRulesController(new JdbcSodRuleDirectory(dataSource), authz);
+        JdbcSodRuleDirectory ruleDirectory = new JdbcSodRuleDirectory(dataSource);
+        controller = new SodRulesController(
+                ruleDirectory, new JdbcSodConflictDirectory(dataSource, ruleDirectory, false), authz);
     }
 
     private static void run(Resource script) {
@@ -162,5 +166,80 @@ class SodRulesControllerTest {
 
         assertThat(controller.listSodRules().getBody())
                 .allSatisfy(r -> assertThat(r.getAvailableActions()).isEmpty());
+    }
+
+    @Test
+    void listsStaticConflictsOnlyForOverlappingScopes() {
+        authenticateFor(TENANT);
+        UUID other = UUID.fromString("00000000-0000-0000-0000-0000000000bb");
+        JdbcTemplate jt = new JdbcTemplate(dataSource);
+        String t = TENANT.toString();
+        // Deux unités sœurs, deux rôles (écriture / validation), deux positions UNIT, un utilisateur :
+        // il détient les deux fonctionnalités mais sur des unités distinctes -> pas de conflit.
+        jt.update("INSERT INTO org_unit(id, tenant_id, type_id, parent_id, code, label, path) VALUES "
+                + "('b0000000-0000-0000-0000-000000000002', ?, 'a0000000-0000-0000-0000-000000000001', "
+                + "'b0000000-0000-0000-0000-000000000001', 'U1', '{\"fr\":\"U1\"}', 'root.u1'), "
+                + "('b0000000-0000-0000-0000-000000000003', ?, 'a0000000-0000-0000-0000-000000000001', "
+                + "'b0000000-0000-0000-0000-000000000001', 'U2', '{\"fr\":\"U2\"}', 'root.u2')",
+                TENANT, TENANT);
+        jt.update("INSERT INTO role(id, tenant_id, code, label, kind) VALUES "
+                + "('c0000000-0000-0000-0000-000000000002', ?, 'W', '{\"fr\":\"W\"}', 'ORGANISATIONAL'), "
+                + "('c0000000-0000-0000-0000-000000000003', ?, 'V', '{\"fr\":\"V\"}', 'ORGANISATIONAL')",
+                TENANT, TENANT);
+        jt.update("INSERT INTO role_feature(role_id, feature_code) VALUES "
+                + "('c0000000-0000-0000-0000-000000000002', 'finding.write'), "
+                + "('c0000000-0000-0000-0000-000000000003', 'finding.validate')");
+        jt.update("INSERT INTO position(id, tenant_id, code, label, rank, scope) VALUES "
+                + "('d0000000-0000-0000-0000-000000000002', ?, 'PW', '{\"fr\":\"PW\"}', 30, 'UNIT'), "
+                + "('d0000000-0000-0000-0000-000000000003', ?, 'PV', '{\"fr\":\"PV\"}', 31, 'UNIT')",
+                TENANT, TENANT);
+        jt.update("INSERT INTO position_role(position_id, role_id) VALUES "
+                + "('d0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000002'), "
+                + "('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000003')");
+        jt.update("INSERT INTO assignment(id, tenant_id, user_id, position_id, org_unit_id, kind, valid_from) VALUES "
+                + "('e0000000-0000-0000-0000-000000000002', ?, ?, 'd0000000-0000-0000-0000-000000000002', "
+                + "'b0000000-0000-0000-0000-000000000002', 'HOLDER', CURRENT_DATE), "
+                + "('e0000000-0000-0000-0000-000000000003', ?, ?, 'd0000000-0000-0000-0000-000000000003', "
+                + "'b0000000-0000-0000-0000-000000000003', 'HOLDER', CURRENT_DATE)",
+                TENANT, other, TENANT, other);
+        try {
+            List<ListSodConflicts200ResponseInner> conflicts = controller.listSodConflicts().getBody();
+
+            // Seul ACTOR (portée TENANT) est en conflit, sur les deux règles statiques, jamais la dynamique.
+            assertThat(conflicts).hasSize(2);
+            assertThat(conflicts).allSatisfy(c -> {
+                assertThat(c.getUser().getId()).isEqualTo(ACTOR);
+                assertThat(c.getRule().getType()).isEqualTo(SodRule.TypeEnum.STATIC);
+                assertThat(c.getViaAssignments())
+                        .containsExactly(UUID.fromString("e0000000-0000-0000-0000-000000000001"));
+            });
+            assertThat(conflicts).extracting(c -> c.getRule().getSeverity())
+                    .containsExactlyInAnyOrder(SodRule.SeverityEnum.BLOCK, SodRule.SeverityEnum.WARN);
+
+            // Même unité : le conflit apparaît avec les deux affectations.
+            jt.update("UPDATE assignment SET org_unit_id = 'b0000000-0000-0000-0000-000000000002' "
+                    + "WHERE id = 'e0000000-0000-0000-0000-000000000003'");
+            List<ListSodConflicts200ResponseInner> same = controller.listSodConflicts().getBody();
+            assertThat(same).filteredOn(c -> other.equals(c.getUser().getId())).hasSize(1)
+                    .allSatisfy(c -> assertThat(c.getViaAssignments()).hasSize(2));
+        } finally {
+            jt.update("DELETE FROM assignment WHERE user_id = ?", other);
+            jt.update("DELETE FROM position_role WHERE position_id IN "
+                    + "('d0000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000003')");
+            jt.update("DELETE FROM position WHERE id IN "
+                    + "('d0000000-0000-0000-0000-000000000002','d0000000-0000-0000-0000-000000000003')");
+            jt.update("DELETE FROM role_feature WHERE role_id IN "
+                    + "('c0000000-0000-0000-0000-000000000002','c0000000-0000-0000-0000-000000000003')");
+            jt.update("DELETE FROM role WHERE id IN "
+                    + "('c0000000-0000-0000-0000-000000000002','c0000000-0000-0000-0000-000000000003')");
+            jt.update("DELETE FROM org_unit WHERE id IN "
+                    + "('b0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000003')");
+        }
+    }
+
+    @Test
+    void noConflictsForTenantWithoutAssignments() {
+        authenticateFor(OTHER_TENANT);
+        assertThat(controller.listSodConflicts().getBody()).isEmpty();
     }
 }
