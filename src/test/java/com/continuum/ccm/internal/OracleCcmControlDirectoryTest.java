@@ -54,7 +54,7 @@ class OracleCcmControlDirectoryTest {
                   END LOOP;
                 END;
                 """);
-        run(new FileSystemResource(oracle.resolve("V202610091600__ccm_control.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091600__ccm_control.sql")));
         run(new ClassPathResource("ccm-controls-oracle-seed.sql"));
 
         directory = new OracleCcmControlDirectory(dataSource, new ObjectMapper());

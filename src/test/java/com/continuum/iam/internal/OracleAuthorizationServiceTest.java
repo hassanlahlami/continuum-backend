@@ -51,9 +51,9 @@ class OracleAuthorizationServiceTest {
                 url, System.getProperty("it.oracle.user"), System.getProperty("it.oracle.password"));
         dataSource.setDriverClassName("oracle.jdbc.OracleDriver");
 
-        run(new FileSystemResource(oracle.resolve("V202609300900__platform_feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("R__feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("V202609301000__entity_iam_structure.sql")));
+        run(new FileSystemResource(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql")));
+        run(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql")));
         run(new ClassPathResource("iam-oracle-authz-seed.sql"));
     }
 

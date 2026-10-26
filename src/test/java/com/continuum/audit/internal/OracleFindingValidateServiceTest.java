@@ -74,13 +74,13 @@ class OracleFindingValidateServiceTest {
                 END;
                 """);
 
-        run(new FileSystemResource(oracle.resolve("V202609300900__platform_feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("R__feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("V202609301000__entity_iam_structure.sql")));
-        run(new FileSystemResource(oracle.resolve("V202609301100__entity_audit_trail.sql")));
-        run(new FileSystemResource(oracle.resolve("V202610091200__entity_mission.sql")));
-        run(new FileSystemResource(oracle.resolve("V202610091300__entity_finding.sql")));
-        run(new FileSystemResource(oracle.resolve("V202610091500__finding_frap.sql")));
+        run(new FileSystemResource(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql")));
+        run(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301100__entity_audit_trail.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091200__entity_mission.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091300__entity_finding.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091500__finding_frap.sql")));
         run(new ClassPathResource("finding-validate-oracle-seed.sql"));
 
         auditTrail = new OracleAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8));
