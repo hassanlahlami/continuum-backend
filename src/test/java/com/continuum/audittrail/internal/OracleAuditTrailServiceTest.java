@@ -70,7 +70,7 @@ class OracleAuditTrailServiceTest {
         } catch (RuntimeException ignore) {
             // table absente au premier lancement : ORA-00942 ignorée
         }
-        run(new FileSystemResource(oracle.resolve("V202609301100__entity_audit_trail.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301100__entity_audit_trail.sql")));
 
         OracleAuditTrailService service = new OracleAuditTrailService(dataSource, KEY);
         long s1 = service.append(new AuditEntry(TENANT, ACTOR, "finding.write", "FINDING", "F-1", "{\"v\":1}"));

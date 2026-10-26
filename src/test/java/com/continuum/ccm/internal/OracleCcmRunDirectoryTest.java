@@ -58,7 +58,7 @@ class OracleCcmRunDirectoryTest {
                   END LOOP;
                 END;
                 """);
-        run(new FileSystemResource(oracle.resolve("V202610141000__ccm_run.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610141000__ccm_run.sql")));
         directory = new OracleCcmRunDirectory(dataSource);
 
         OffsetDateTime t0 = OffsetDateTime.now().minusHours(2);

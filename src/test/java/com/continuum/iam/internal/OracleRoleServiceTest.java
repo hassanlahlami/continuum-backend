@@ -52,10 +52,10 @@ class OracleRoleServiceTest {
         dataSource.setDriverClassName("oracle.jdbc.OracleDriver");
         jdbc = new JdbcTemplate(dataSource);
 
-        run(oracle.resolve("V202609300900__platform_feature_catalog.sql"));
-        run(oracle.resolve("R__feature_catalog.sql"));
-        run(oracle.resolve("V202609301000__entity_iam_structure.sql"));
-        run(oracle.resolve("V202609301100__entity_audit_trail.sql"));
+        run(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql"));
+        run(oracle.resolve("platform").resolve("R__feature_catalog.sql"));
+        run(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql"));
+        run(oracle.resolve("entity").resolve("V202609301100__entity_audit_trail.sql"));
     }
 
     private static void run(Path script) {
