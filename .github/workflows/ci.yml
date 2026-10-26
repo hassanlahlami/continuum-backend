@@ -1,16 +1,21 @@
 # Intégration continue du backend (plan §8). Gate : `mvn verify` avec une base PostgreSQL réelle
 # (service) et les scripts du continuum-migrator (dépôt voisin, extrait en ../continuum-migrator).
 # `-Dit.db.url` active DbSkipGuardListener : un test DB neutralisé en silence fait échouer le build.
-# Oracle : non couvert ici (pas de service Oracle) — ces tests restent neutralisés sans -Dit.oracle.url.
+# Oracle : job `oracle-nightly` séparé (cron + workflow_dispatch), image identique à Instructions/infra/simulation
+# (gvenzl/oracle-free:23-slim-faststart). Le job par push reste PostgreSQL seul.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
 jobs:
   build:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -44,3 +49,41 @@ jobs:
           mvn -B -ntp verify
           -Dit.db.url=jdbc:postgresql://localhost:5433/continuum
           -Dit.db.user=postgres -Dit.db.password=pg
+
+  oracle-nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      oracle:
+        image: gvenzl/oracle-free:23-slim-faststart
+        env:
+          ORACLE_PASSWORD: oracle
+          APP_USER: CONTINUUM
+          APP_USER_PASSWORD: continuum
+        ports:
+          - 1521:1521
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 15s --health-timeout 10s --health-retries 20
+          --health-start-period 60s
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout continuum-migrator (sibling, as tests expect ../continuum-migrator)
+        uses: actions/checkout@v4
+        with:
+          repository: hassanlahlami/continuum-migrator
+          path: continuum-migrator
+          token: ${{ secrets.MIGRATOR_READ_TOKEN || github.token }}
+      - name: Move migrator next to the workspace
+        run: mv continuum-migrator ../continuum-migrator
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Oracle parity tests
+        run: >-
+          mvn -B -ntp test -Dtest='Oracle*Test'
+          -Dit.oracle.url=jdbc:oracle:thin:@//localhost:1521/FREEPDB1
+          -Dit.oracle.user=CONTINUUM -Dit.oracle.password=continuum
