@@ -74,6 +74,7 @@ class RolesControllerTest {
         run(new FileSystemResource(pg.resolve("V202609300900__platform_feature_catalog.sql")));
         run(new FileSystemResource(pg.resolve("R__feature_catalog.sql")));
         run(new FileSystemResource(pg.resolve("V202609301000__entity_iam_structure.sql")));
+        run(new FileSystemResource(pg.resolve("V202610261000__sod_rule_from_pack.sql")));
         run(new FileSystemResource(pg.resolve("V202609301100__entity_audit_trail.sql")));
 
         AuditTrailService audit = new JdbcAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8));

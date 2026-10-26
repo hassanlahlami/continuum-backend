@@ -3,6 +3,11 @@ package com.continuum.iam.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.ScopedFeature;
 import com.continuum.iam.internal.JdbcSodRuleDirectory;
 import gen.admin.iam.model.SodRule;
 import java.nio.charset.StandardCharsets;
@@ -41,7 +46,11 @@ class SodRulesControllerTest {
     private static final UUID OTHER_TENANT = UUID.fromString("00000000-0000-0000-0000-0000000000ff");
 
     private static DataSource dataSource;
+    private static final UUID PACK_RULE = UUID.fromString("90000000-0000-0000-0000-000000000001");
+    private static final UUID ACTOR = UUID.fromString("00000000-0000-0000-0000-0000000000aa");
+
     private static SodRulesController controller;
+    private static AuthorizationService authz;
 
     @BeforeAll
     static void applySchemaAndSeed() {
@@ -64,9 +73,12 @@ class SodRulesControllerTest {
         run(new FileSystemResource(pg.resolve("V202609300900__platform_feature_catalog.sql")));
         run(new FileSystemResource(pg.resolve("R__feature_catalog.sql")));
         run(new FileSystemResource(pg.resolve("V202609301000__entity_iam_structure.sql")));
+        run(new FileSystemResource(pg.resolve("V202610261000__sod_rule_from_pack.sql")));
         run(new ClassPathResource("iam-sod-seed.sql"));
 
-        controller = new SodRulesController(new JdbcSodRuleDirectory(dataSource));
+        jt.update("UPDATE sod_rule SET from_pack = TRUE WHERE id = ?", PACK_RULE);
+        authz = mock(AuthorizationService.class);
+        controller = new SodRulesController(new JdbcSodRuleDirectory(dataSource), authz);
     }
 
     private static void run(Resource script) {
@@ -80,6 +92,7 @@ class SodRulesControllerTest {
     private static void authenticateFor(UUID tenantId) {
         Jwt jwt = Jwt.withTokenValue("test").header("alg", "none")
                 .claim("tenant_id", tenantId.toString())
+                .claim("continuum_user_id", ACTOR.toString())
                 .build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
     }
@@ -122,5 +135,32 @@ class SodRulesControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull().isEmpty();
+    }
+
+    @Test
+    void exposesFromPackAndActionsForManager() {
+        authenticateFor(TENANT);
+        when(authz.permissions(TENANT, ACTOR))
+                .thenReturn(List.of(new ScopedFeature("admin.sod.manage", "TENANT", null)));
+
+        List<SodRule> rules = controller.listSodRules().getBody();
+
+        SodRule pack = rules.stream().filter(r -> PACK_RULE.equals(r.getId())).findFirst().orElseThrow();
+        assertThat(pack.getFromPack()).isTrue();
+        assertThat(pack.getAvailableActions()).extracting("code").containsExactly("edit");
+        assertThat(rules).filteredOn(r -> !PACK_RULE.equals(r.getId())).allSatisfy(r -> {
+            assertThat(r.getFromPack()).isFalse();
+            assertThat(r.getAvailableActions()).extracting("code").containsExactly("edit", "delete");
+        });
+    }
+
+    @Test
+    void noActionsWithoutManageRight() {
+        authenticateFor(TENANT);
+        when(authz.permissions(TENANT, ACTOR))
+                .thenReturn(List.of(new ScopedFeature("admin.sod.read", "TENANT", null)));
+
+        assertThat(controller.listSodRules().getBody())
+                .allSatisfy(r -> assertThat(r.getAvailableActions()).isEmpty());
     }
 }

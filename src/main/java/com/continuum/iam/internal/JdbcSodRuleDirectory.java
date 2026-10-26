@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 public class JdbcSodRuleDirectory implements SodRuleDirectory {
 
     private static final String SQL = """
-            SELECT id, feature_a, feature_b, type, severity
+            SELECT id, feature_a, feature_b, type, severity, from_pack
             FROM sod_rule
             WHERE tenant_id = :tenant
             ORDER BY feature_a, feature_b, type
@@ -38,6 +38,7 @@ public class JdbcSodRuleDirectory implements SodRuleDirectory {
                 rs.getString("feature_a"),
                 rs.getString("feature_b"),
                 rs.getString("type"),
-                rs.getString("severity")));
+                rs.getString("severity"),
+                rs.getBoolean("from_pack")));
     }
 }
