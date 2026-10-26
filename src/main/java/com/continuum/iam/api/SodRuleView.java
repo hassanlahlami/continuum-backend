@@ -13,11 +13,13 @@ import java.util.UUID;
  * @param featureB seconde fonctionnalité de la paire (code)
  * @param type     {@code STATIC} (cumul interdit) ou {@code DYNAMIC} (même objet)
  * @param severity {@code BLOCK} (interdit) ou {@code WARN} (à signaler)
+ * @param fromPack règle livrée par le pack (non supprimable)
  */
 public record SodRuleView(
         UUID id,
         String featureA,
         String featureB,
         String type,
-        String severity) {
+        String severity,
+        boolean fromPack) {
 }

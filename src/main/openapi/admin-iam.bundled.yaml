@@ -1719,6 +1719,16 @@ components:
             - WARN
         description:
           type: string
+        fromPack:
+          type: boolean
+          readOnly: true
+          description: Règle livrée par le pack (signalée dans l'écran ; modification/suppression soumises à `availableActions`).
+        availableActions:
+          type: array
+          readOnly: true
+          description: Actions permises sur la règle (edit, delete) ; également présent sur `rule` dans /sod-conflicts.
+          items:
+            $ref: '#/components/schemas/AvailableAction'
     AuthzSimulationResult:
       type: object
       properties:
