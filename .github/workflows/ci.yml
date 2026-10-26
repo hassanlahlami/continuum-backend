@@ -1,7 +1,7 @@
-# Intégration continue du backend (plan §8). Gate : `mvn verify` — tests unitaires et de tranche
-# (@WebMvcTest, ApplicationContextRunner, MockMvc autonome). Les tests d'intégration sur base réelle
-# sont neutralisés sans `-Dit.db.url`/`-Dit.oracle.url` (ils vivent avec le continuum-migrator, dépôt
-# voisin non présent ici) — voir README et docs/suivi/ETAT.md.
+# Intégration continue du backend (plan §8). Gate : `mvn verify` avec une base PostgreSQL réelle
+# (service) et les scripts du continuum-migrator (dépôt voisin, extrait en ../continuum-migrator).
+# `-Dit.db.url` active DbSkipGuardListener : un test DB neutralisé en silence fait échouer le build.
+# Oracle : non couvert ici (pas de service Oracle) — ces tests restent neutralisés sans -Dit.oracle.url.
 name: CI
 
 on:
@@ -12,8 +12,27 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: continuum
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout continuum-migrator (sibling, as tests expect ../continuum-migrator)
+        uses: actions/checkout@v4
+        with:
+          repository: hassanlahlami/continuum-migrator
+          path: continuum-migrator
+          token: ${{ secrets.MIGRATOR_READ_TOKEN || github.token }}
+      - name: Move migrator next to the workspace
+        run: mv continuum-migrator ../continuum-migrator
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -21,4 +40,7 @@ jobs:
           java-version: "21"
           cache: maven
       - name: Build & test (mvn verify)
-        run: mvn -B -ntp verify
+        run: >-
+          mvn -B -ntp verify
+          -Dit.db.url=jdbc:postgresql://localhost:5433/continuum
+          -Dit.db.user=postgres -Dit.db.password=pg
