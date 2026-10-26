@@ -4,29 +4,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.continuum.iam.api.ScopedFeature;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.SQLException;
+import com.continuum.testsupport.OracleTestSchema;
 import java.util.UUID;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.EncodedResource;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /**
  * Vérifie {@link OracleAuthorizationService} sur une <strong>vraie base Oracle</strong> (§2.1.6, D4) :
  * portée {@code UNIT_TREE} via la table de fermeture, {@code RAW(16)}, {@code NUMBER(1)}.
  *
- * <p>Activé seulement si {@code -Dit.oracle.url=jdbc:oracle:thin:@…} est fourni (schéma courant =
- * {@code PLATFORM}, où atterrissent les objets qualifiés {@code platform.*} et les tables d'entité).
+ * <p>Activé seulement si {@code -Dit.oracle.url=jdbc:oracle:thin:@…} est fourni ; schéma à
+ * deux comptes PLATFORM / entité via {@link com.continuum.testsupport.OracleTestSchema} (ADR 0012).
  */
 @EnabledIfSystemProperty(named = "it.oracle.url", matches = "jdbc:oracle:.+")
 class OracleAuthorizationServiceTest {
@@ -42,27 +33,13 @@ class OracleAuthorizationServiceTest {
 
     @BeforeAll
     static void applySchemaAndSeed() {
-        String url = System.getProperty("it.oracle.url");
-        Path oracle = Path.of("..", "continuum-migrator", "src", "main", "resources", "db", "oracle")
-                .toAbsolutePath().normalize();
-        Assumptions.assumeTrue(Files.isDirectory(oracle), "Scripts Oracle du migrateur introuvables : " + oracle);
+        OracleTestSchema db = OracleTestSchema.connect().reset();
+        dataSource = db.dataSource();
 
-        dataSource = new DriverManagerDataSource(
-                url, System.getProperty("it.oracle.user"), System.getProperty("it.oracle.password"));
-        dataSource.setDriverClassName("oracle.jdbc.OracleDriver");
-
-        run(new FileSystemResource(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql")));
-        run(new ClassPathResource("iam-oracle-authz-seed.sql"));
-    }
-
-    private static void run(Resource script) {
-        try (Connection c = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(c, new EncodedResource(script, StandardCharsets.UTF_8));
-        } catch (SQLException e) {
-            throw new IllegalStateException("script " + script, e);
-        }
+        db.platform("V202609300900__platform_feature_catalog.sql");
+        db.platform("R__feature_catalog.sql");
+        db.entity("V202609301000__entity_iam_structure.sql");
+        db.seed(new ClassPathResource("iam-oracle-authz-seed.sql"));
     }
 
     private static OracleAuthorizationService service() {
