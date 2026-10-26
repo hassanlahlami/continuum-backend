@@ -11,6 +11,7 @@ import org.junit.platform.launcher.TestPlan;
  * Garde-fou : quand {@code -Dit.db.url} est fourni, un test d'intégration ne doit pas être
  * neutralisé en silence (scripts du migrateur introuvables, base absente…). Sinon le build resterait
  * vert avec 0 test réellement exécuté. Dans ce cas la JVM de test termine en échec, bruyamment.
+ * Idem si CI=true ou CONTINUUM_REQUIRE_DB=true (hors tests Oracle, non couverts par la CI), même sans URL.
  */
 public class DbSkipGuardListener implements TestExecutionListener {
 
@@ -18,12 +19,16 @@ public class DbSkipGuardListener implements TestExecutionListener {
 
     @Override
     public void executionFinished(TestIdentifier id, TestExecutionResult result) {
-        if (result.getStatus() != TestExecutionResult.Status.ABORTED || !dbRequested()) {
+        if (result.getStatus() != TestExecutionResult.Status.ABORTED) {
             return;
         }
         String reason = result.getThrowable().map(Throwable::getMessage).orElse("");
-        if (reason != null && (reason.contains("introuvable") || reason.contains("Base de test absente"))) {
+        if (dbRequested() && reason != null
+                && (reason.contains("introuvable") || reason.contains("Base de test absente"))) {
             silentSkips.add(id.getDisplayName() + " — " + reason);
+        } else if (dbRequiredByEnv() && !id.getUniqueId().contains("Oracle")) {
+            // CI / CONTINUUM_REQUIRE_DB : même sans URL, un test PostgreSQL neutralisé est une erreur.
+            silentSkips.add(id.getUniqueId() + " — " + reason);
         }
     }
 
@@ -37,6 +42,11 @@ public class DbSkipGuardListener implements TestExecutionListener {
         silentSkips.forEach(s -> System.err.println("  - " + s));
         System.err.flush();
         Runtime.getRuntime().halt(1);
+    }
+
+    private static boolean dbRequiredByEnv() {
+        return "true".equalsIgnoreCase(System.getenv("CI"))
+                || "true".equalsIgnoreCase(System.getenv("CONTINUUM_REQUIRE_DB"));
     }
 
     private static boolean dbRequested() {
