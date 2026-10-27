@@ -36,7 +36,7 @@ public class SchemaVersionVerifier {
      * {@code V202610141000__ccm_run.sql}). À <strong>relever</strong> quand une fonctionnalité du
      * backend commence à dépendre d'une migration plus récente.
      */
-    public static final long REQUIRED_SCHEMA_VERSION = 202610261000L;
+    public static final long REQUIRED_SCHEMA_VERSION = 202610271000L;
 
     /** Schéma plus ancien que {@link #REQUIRED_SCHEMA_VERSION}, ou historique Flyway illisible. */
     public static final String EVENT_SCHEMA_OUTDATED = "CTN-DB-0003";
@@ -45,14 +45,17 @@ public class SchemaVersionVerifier {
 
     private final JdbcTemplate jdbc;
     private final String historyTable;
+    private final String platformHistoryTable;
     private final boolean enabled;
 
     public SchemaVersionVerifier(
             DataSource dataSource,
             @Value("${continuum.schema.history-table:flyway_schema_history}") String historyTable,
+            @Value("${continuum.schema.platform-history-table:}") String platformHistoryTable,
             @Value("${continuum.schema.version-check.enabled:true}") boolean enabled) {
         this.jdbc = new JdbcTemplate(dataSource);
         this.historyTable = historyTable;
+        this.platformHistoryTable = platformHistoryTable;
         this.enabled = enabled;
     }
 
@@ -77,8 +80,21 @@ public class SchemaVersionVerifier {
         log.info("Schema version verified: applied {} >= required {}.", applied, REQUIRED_SCHEMA_VERSION);
     }
 
-    /** Plus grand numéro de migration versionnée réussie dans l'historique Flyway (0 si aucune). */
+    /**
+     * Plus grand numéro appliqué. Sur Oracle (ADR 0012) les migrations vivent dans deux historiques
+     * Flyway (entité + PLATFORM) : si {@code continuum.schema.platform-history-table} est renseigné, le
+     * maximum des deux est retenu.
+     */
     private long readAppliedVersion() {
+        long applied = readAppliedVersion(historyTable);
+        if (platformHistoryTable != null && !platformHistoryTable.isBlank()) {
+            applied = Math.max(applied, readAppliedVersion(platformHistoryTable));
+        }
+        return applied;
+    }
+
+    /** Plus grand numéro de migration versionnée réussie dans cet historique Flyway (0 si aucune). */
+    private long readAppliedVersion(String historyTable) {
         try {
             return jdbc.query(
                     "SELECT version, success FROM " + historyTable + " WHERE version IS NOT NULL",
