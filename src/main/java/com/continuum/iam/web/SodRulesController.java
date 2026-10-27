@@ -12,6 +12,7 @@ import gen.admin.iam.model.UserSummary;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -46,6 +47,7 @@ public class SodRulesController implements SodApi {
     }
 
     @Override
+    @PreAuthorize("@authz.can('admin.sod.read')")
     public ResponseEntity<List<SodRule>> listSodRules() {
         Jwt jwt = currentJwt();
         UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
@@ -60,6 +62,7 @@ public class SodRulesController implements SodApi {
      * nom affiché de l'utilisateur est son identifiant tant qu'aucun annuaire n'est exposé.
      */
     @Override
+    @PreAuthorize("@authz.can('admin.sod.read')")
     public ResponseEntity<List<ListSodConflicts200ResponseInner>> listSodConflicts() {
         Jwt jwt = currentJwt();
         UUID tenant = uuidClaim(jwt, CLAIM_TENANT);
