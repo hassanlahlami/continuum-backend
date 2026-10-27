@@ -2,6 +2,7 @@ package com.continuum.security;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,6 +34,22 @@ class SecurityChainsTest {
 
     @MockitoBean
     private JwtDecoder jwtDecoder; // requis par le resource server ; non invoqué (JWT simulé)
+
+    @Test
+    void corsPreflightAllowedFromLocalhost8080() throws Exception {
+        mvc.perform(options("/api/app/ping").header("Origin", "http://localhost:8080")
+                        .header("Access-Control-Request-Method", "GET")
+                        .header("Access-Control-Request-Headers", "authorization"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:8080"));
+    }
+
+    @Test
+    void corsPreflightRejectedFromOtherOrigin() throws Exception {
+        mvc.perform(options("/api/app/ping").header("Origin", "http://evil.example")
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(status().isForbidden());
+    }
 
     @Test
     void adminAllowsAdminAudienceWithStrongAcr() throws Exception {
