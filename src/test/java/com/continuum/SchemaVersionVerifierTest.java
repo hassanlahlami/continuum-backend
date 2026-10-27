@@ -47,7 +47,7 @@ class SchemaVersionVerifierTest {
     }
 
     private SchemaVersionVerifier verifier(boolean enabled) {
-        return new SchemaVersionVerifier(dataSource, TABLE, enabled);
+        return new SchemaVersionVerifier(dataSource, TABLE, "", enabled);
     }
 
     @Test
