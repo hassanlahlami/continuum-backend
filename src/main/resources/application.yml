@@ -42,6 +42,13 @@ continuum:
   internal:
     # Client Keycloak (compte de service) autorise a appeler /internal/** (client credentials).
     client-id: ${CONTINUUM_INTERNAL_CLIENT_ID:continuum-keycloak}
+  keycloak:
+    # Client d'administration Keycloak (reset-mfa, close-sessions) ; base-url vide = fonction indisponible (503).
+    admin:
+      base-url: ${CONTINUUM_KC_ADMIN_BASE_URL:}
+      realm: ${CONTINUUM_KC_ADMIN_REALM:banque-demo}
+      client-id: ${CONTINUUM_KC_ADMIN_CLIENT_ID:continuum-admin-service}
+      client-secret: ${KC_ADMIN_SERVICE_SECRET:}
   surface: ${CONTINUUM_SURFACE:all}
   db:
     # Dialecte du moteur d'autorisation (D4) : postgresql | oracle.
