@@ -1,5 +1,6 @@
 package com.continuum;
 
+import java.util.List;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -14,6 +15,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 /**
@@ -44,12 +48,27 @@ public class SecurityConfig {
     static final String AUDIENCE_APP = "continuum-app";
     static final int ADMIN_MIN_ACR = 2;
 
+    /** CORS pour les fronts (origines configurables, {@code continuum.cors.allowed-origins}). */
+    @Bean
+    CorsConfigurationSource corsConfigurationSource(
+            @Value("${continuum.cors.allowed-origins:http://localhost:8080}") List<String> origins) {
+        CorsConfiguration cors = new CorsConfiguration();
+        cors.setAllowedOrigins(origins);
+        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        cors.setAllowedHeaders(List.of("*"));
+        cors.setMaxAge(3600L);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", cors);
+        return source;
+    }
+
     @Bean
     @Order(1)
     @ConditionalOnExpression(DeploymentSurface.ON_ADMIN)
     SecurityFilterChain adminApi(HttpSecurity http, ProblemSecurityHandler problem) throws Exception {
         http
                 .securityMatcher("/api/admin/**")
+                .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .anyRequest().access(hasAudienceAndAcr(AUDIENCE_ADMIN, ADMIN_MIN_ACR)))
@@ -65,6 +84,7 @@ public class SecurityConfig {
     SecurityFilterChain appApi(HttpSecurity http, ProblemSecurityHandler problem) throws Exception {
         http
                 .securityMatcher("/api/app/**")
+                .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .anyRequest().access(hasAudienceAndAcr(AUDIENCE_APP, 0)))
@@ -97,6 +117,7 @@ public class SecurityConfig {
     @Order(3)
     SecurityFilterChain defaultApi(HttpSecurity http, ProblemSecurityHandler problem) throws Exception {
         http
+                .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/info", "/api/public/**").permitAll()
