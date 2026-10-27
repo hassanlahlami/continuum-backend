@@ -118,6 +118,7 @@ paths:
         - entities
       operationId: performEntityAction
       summary: Suspendre, réactiver, passer en maintenance
+      description: actionCode ∈ {suspend, reactivate, maintenance} ; pas de payload. Seules les actions listées dans Entity.availableActions sont proposées.
       x-required-feature: admin.entity.manage
       parameters:
         - $ref: '#/components/parameters/EntityId'
@@ -419,6 +420,7 @@ paths:
         - org
       operationId: performOrgUnitAction
       summary: Déplacer une unité (et son sous-arbre) ou la fermer — impact sur les affectations affiché avant confirmation
+      description: 'actionCode ∈ {move, close}. move : payload.parentId (Id de l''unité parente cible). close : pas de payload. Impact = OrgUnitNode.assignmentsCount du sous-arbre, calculé côté client (pas d''endpoint d''aperçu au MVP).'
       x-required-feature: admin.org.manage
       parameters:
         - $ref: '#/components/parameters/UnitIdPath'
@@ -1446,6 +1448,10 @@ components:
           type: string
         typeLabel:
           type: string
+        unitTypeId:
+          $ref: '#/components/schemas/Id'
+        version:
+          type: integer
         closed:
           type: boolean
         assignmentsCount:
