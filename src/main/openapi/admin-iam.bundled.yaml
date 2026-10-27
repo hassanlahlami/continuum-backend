@@ -240,6 +240,7 @@ paths:
         - users
       operationId: performUserAction
       summary: Verrouiller, déverrouiller, réinitialiser la MFA, désactiver, fermer toutes les sessions
+      description: 'Codes d''action : `lock`, `unlock`, `reset-mfa`, `disable`, `close-sessions` ; `comment` obligatoire pour `lock` et `disable` (voir `availableActions[].requiresComment`). 409 si `version` périmée.'
       x-required-feature: admin.user.manage
       parameters:
         - $ref: '#/components/parameters/UserId'
@@ -259,6 +260,8 @@ paths:
                 $ref: '#/components/schemas/UserAccount'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /directory/sync:
     get:
       tags:
@@ -1366,6 +1369,16 @@ components:
             $ref: '#/components/schemas/Assignment'
         activeSessions:
           type: integer
+        version:
+          type: integer
+          minimum: 0
+          description: Version pour l'écriture concurrente (409 si périmée)
+          example: 3
+        availableActions:
+          type: array
+          description: Actions possibles sur ce compte (calculées par le serveur ; codes lock, unlock, reset-mfa, disable, close-sessions). Aucune action sur son propre compte, sauf close-sessions.
+          items:
+            $ref: '#/components/schemas/AvailableAction'
     UserPage:
       allOf:
         - $ref: '#/components/schemas/PageMeta'
