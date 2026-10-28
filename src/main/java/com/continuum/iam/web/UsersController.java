@@ -1,6 +1,7 @@
 package com.continuum.iam.web;
 
 import com.continuum.iam.api.AdminDirectory;
+import com.continuum.iam.api.DirectorySyncService;
 import com.continuum.iam.api.IdentityProviderAdmin.IdentityProviderUnavailableException;
 import com.continuum.iam.api.UserAccountActionService;
 import com.continuum.iam.api.UserAccountActionService.IllegalUserActionException;
@@ -40,10 +41,12 @@ public class UsersController implements UsersApi {
 
     private final UserAccountActionService actions;
     private final AdminDirectory directory;
+    private final DirectorySyncService sync;
 
-    public UsersController(UserAccountActionService actions, AdminDirectory directory) {
+    public UsersController(UserAccountActionService actions, AdminDirectory directory, DirectorySyncService sync) {
         this.actions = actions;
         this.directory = directory;
+        this.sync = sync;
     }
 
     @Override
@@ -70,18 +73,31 @@ public class UsersController implements UsersApi {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown user " + userId));
     }
 
-    /** No synchronisation history is persisted yet: an empty status means the directory was never synchronised. */
     @Override
     @PreAuthorize("@authz.can('admin.user.read')")
     public ResponseEntity<DirectorySyncStatus> getDirectorySyncStatus() {
-        return ResponseEntity.ok(new DirectorySyncStatus());
+        UUID tenant = UUID.fromString(currentJwt().getClaimAsString(CLAIM_TENANT));
+        DirectorySyncStatus out = new DirectorySyncStatus();
+        sync.status(tenant).ifPresent(st -> {
+            out.provider(st.sourceCode()).lastError(st.lastError());
+            if (st.lastSyncAt() != null) {
+                out.lastFullSyncAt(st.lastSyncAt().atOffset(ZoneOffset.UTC));
+            }
+        });
+        return ResponseEntity.ok(out);
     }
 
     @Override
     @PreAuthorize("@authz.can('admin.user.manage')")
     public ResponseEntity<Job> triggerDirectorySync() {
-        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "Directory federation is not configured: no synchronisation connector available");
+        if (!sync.configured()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Directory federation is not configured: no synchronisation source available");
+        }
+        UUID tenant = UUID.fromString(currentJwt().getClaimAsString(CLAIM_TENANT));
+        DirectorySyncService.SyncState st = sync.trigger(tenant);
+        return ResponseEntity.accepted().body(new Job().id(st.id()).type("DIRECTORY_SYNC")
+                .status(Job.StatusEnum.RUNNING));
     }
 
     private static UserAccount toModel(AdminDirectory.UserRow r, UUID actor) {
