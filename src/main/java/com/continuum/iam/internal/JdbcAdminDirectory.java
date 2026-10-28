@@ -85,6 +85,14 @@ public class JdbcAdminDirectory implements AdminDirectory {
     }
 
     @Override
+    public long countUsersWithoutAssignment(UUID tenantId) {
+        Long n = jdbc.queryForObject("SELECT COUNT(*) FROM platform.user_account u WHERE u.tenant_id = ?"
+                + " AND u.status <> 'DISABLED' AND NOT EXISTS (SELECT 1 FROM assignment a WHERE a.user_id = u.id"
+                + " AND " + ACTIVE_ASSIGNMENT + ")", Long.class, key(tenantId));
+        return n == null ? 0 : n;
+    }
+
+    @Override
     public Optional<UserRow> findUser(UUID tenantId, UUID userId) {
         return jdbc.query(USER_SELECT + " WHERE u.tenant_id = ? AND u.id = ?", this::userRow,
                 key(tenantId), key(userId)).stream().findFirst();

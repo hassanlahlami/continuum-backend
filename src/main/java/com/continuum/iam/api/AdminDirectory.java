@@ -40,4 +40,7 @@ public interface AdminDirectory {
 
     /** Root units with nested children; labels in {@code locale} (fallback {@code fr}). */
     List<OrgUnitRow> orgTree(UUID tenantId, String locale);
+
+    /** Enabled (non-disabled) accounts holding no currently valid assignment. */
+    long countUsersWithoutAssignment(UUID tenantId);
 }
