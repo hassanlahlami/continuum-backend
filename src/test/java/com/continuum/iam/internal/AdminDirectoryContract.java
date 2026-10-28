@@ -128,6 +128,15 @@ abstract class AdminDirectoryContract {
     }
 
     @Test
+    void countsEnabledUsersWithoutValidAssignmentPerTenant() {
+        // T1: u1 assigned, zoe.ad unassigned; T2: one unassigned user.
+        assertThat(directory().countUsersWithoutAssignment(T1)).isEqualTo(1);
+        assertThat(directory().countUsersWithoutAssignment(T2)).isEqualTo(1);
+        user(UUID.randomUUID(), T1, "off.user", "LOCAL", "DISABLED");
+        assertThat(directory().countUsersWithoutAssignment(T1)).isEqualTo(1);
+    }
+
+    @Test
     void findUserIsTenantScoped() {
         assertThat(directory().findUser(T1, U1)).isPresent();
         assertThat(directory().findUser(T1, U_OTHER)).isEmpty();
