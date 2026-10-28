@@ -1,5 +1,6 @@
 package com.continuum.iam.web;
 
+import com.continuum.iam.api.AdminDirectory;
 import com.continuum.iam.api.IdentityProviderAdmin.IdentityProviderUnavailableException;
 import com.continuum.iam.api.UserAccountActionService;
 import com.continuum.iam.api.UserAccountActionService.IllegalUserActionException;
@@ -10,7 +11,10 @@ import com.continuum.iam.api.UserAccountActionService.UserActionCommand;
 import gen.admin.iam.api.UsersApi;
 import gen.admin.iam.model.ActionRequest;
 import gen.admin.iam.model.AvailableAction;
+import gen.admin.iam.model.DirectorySyncStatus;
+import gen.admin.iam.model.Job;
 import gen.admin.iam.model.UserAccount;
+import gen.admin.iam.model.UserPage;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -35,9 +39,55 @@ public class UsersController implements UsersApi {
     private static final String CLAIM_USER = "continuum_user_id";
 
     private final UserAccountActionService actions;
+    private final AdminDirectory directory;
 
-    public UsersController(UserAccountActionService actions) {
+    public UsersController(UserAccountActionService actions, AdminDirectory directory) {
         this.actions = actions;
+        this.directory = directory;
+    }
+
+    @Override
+    @PreAuthorize("@authz.can('admin.user.read')")
+    public ResponseEntity<UserPage> listUsers(Integer page, Integer size, List<String> sort, String q, UUID unitId,
+                                              String source, String accountStatus, UUID positionId) {
+        UUID tenant = UUID.fromString(currentJwt().getClaimAsString(CLAIM_TENANT));
+        int p = page == null ? 0 : page;
+        int s = size == null ? 25 : size;
+        AdminDirectory.UserPageView view = directory.listUsers(tenant,
+                new AdminDirectory.UserQuery(q, unitId, source, accountStatus, positionId, p, s));
+        UUID actor = UUID.fromString(currentJwt().getClaimAsString(CLAIM_USER));
+        List<UserAccount> items = view.items().stream().map(r -> toModel(r, actor)).toList();
+        int totalPages = (int) ((view.totalItems() + s - 1) / s);
+        return ResponseEntity.ok(new UserPage(p, s, (int) view.totalItems(), totalPages, items));
+    }
+
+    @Override
+    @PreAuthorize("@authz.can('admin.user.read')")
+    public ResponseEntity<UserAccount> getUser(UUID userId) {
+        UUID tenant = UUID.fromString(currentJwt().getClaimAsString(CLAIM_TENANT));
+        UUID actor = UUID.fromString(currentJwt().getClaimAsString(CLAIM_USER));
+        return directory.findUser(tenant, userId).map(r -> ResponseEntity.ok(toModel(r, actor)))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Unknown user " + userId));
+    }
+
+    /** No synchronisation history is persisted yet: an empty status means the directory was never synchronised. */
+    @Override
+    @PreAuthorize("@authz.can('admin.user.read')")
+    public ResponseEntity<DirectorySyncStatus> getDirectorySyncStatus() {
+        return ResponseEntity.ok(new DirectorySyncStatus());
+    }
+
+    @Override
+    @PreAuthorize("@authz.can('admin.user.manage')")
+    public ResponseEntity<Job> triggerDirectorySync() {
+        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Directory federation is not configured: no synchronisation connector available");
+    }
+
+    private static UserAccount toModel(AdminDirectory.UserRow r, UUID actor) {
+        UserAccountView v = new UserAccountView(r.id(), null, r.username(), r.source(), r.status(),
+                r.mfaConfigured(), r.lastLogin(), r.version());
+        return toModel(v, actor);
     }
 
     @Override

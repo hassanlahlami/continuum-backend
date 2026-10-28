@@ -93,7 +93,8 @@ class UsersControllerTest {
             }
         };
         controller = new UsersController(new JdbcUserAccountActionService(ds,
-                new JdbcAuditTrailService(ds, "k".getBytes(StandardCharsets.UTF_8)), idp, false));
+                new JdbcAuditTrailService(ds, "k".getBytes(StandardCharsets.UTF_8)), idp, false),
+                new com.continuum.iam.internal.JdbcAdminDirectory(ds, false));
     }
 
     @BeforeEach
