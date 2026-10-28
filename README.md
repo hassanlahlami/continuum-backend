@@ -52,6 +52,13 @@ Paramètres **techniques** seulement (le métier se paramètre en base, par tena
 (`all`|`app`|`admin`|`worker`). Détail : `src/main/resources/application.yml` et
 `Instructions/docs/exploitation/DEPLOIEMENT.md`.
 
+**Synchronisation annuaire** (job planifié, désactivé par défaut) : `CONTINUUM_DIRECTORY_SYNC_ENABLED=true`,
+`CONTINUUM_DIRECTORY_SYNC_SOURCE` (nom du composant LDAP Keycloak, sim : `ad-banque`),
+`CONTINUUM_DIRECTORY_SYNC_CLIENT_ID` (`continuum-directory-sync`), `CONTINUUM_DIRECTORY_SYNC_CLIENT_SECRET`
+(même valeur que `KC_DIRECTORY_SYNC_SECRET` côté Keycloak, via Vault), `CONTINUUM_KC_ADMIN_BASE_URL`
+(ex. `http://localhost:8180`), optionnels `CONTINUUM_DIRECTORY_SYNC_INTERVAL` (`PT1H`) et
+`CONTINUUM_DIRECTORY_SYNC_INITIAL_DELAY` (`PT1M`). État dans `platform.directory_sync_state`.
+
 ## Surface de déploiement (`CONTINUUM_SURFACE`)
 
 Même jar, rôles différents (`DeploymentSurface`) : `app` (API Fonctionnelle), `admin` (API Admin),
