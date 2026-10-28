@@ -10,6 +10,7 @@ import com.continuum.ProblemSecurityHandler;
 import com.continuum.SecurityConfig;
 import com.continuum.iam.api.AdminDirectory;
 import com.continuum.iam.api.AuthorizationService;
+import com.continuum.iam.api.DirectorySyncService;
 import com.continuum.iam.api.ScopedFeature;
 import com.continuum.iam.api.SegregationOfDutiesService;
 import com.continuum.iam.api.SodConflictDirectory;
@@ -52,6 +53,8 @@ class OverviewControllerTest {
     @MockitoBean
     private SodConflictDirectory sodConflicts;
     @MockitoBean
+    private DirectorySyncService directorySync;
+    @MockitoBean
     private JwtDecoder jwtDecoder;
 
     @Test
@@ -69,6 +72,19 @@ class OverviewControllerTest {
                 .andExpect(jsonPath("$.staticSodConflicts").value(2))
                 .andExpect(jsonPath("$.lastDirectorySyncAt").doesNotExist())
                 .andExpect(jsonPath("$.licenseExpiresOn").doesNotExist());
+    }
+
+    @Test
+    void exposesLastDirectorySyncAtWhenASyncSucceeded() throws Exception {
+        given(authorization.permissions(TENANT, USER))
+                .willReturn(List.of(new ScopedFeature("admin.overview.read", "TENANT", null)));
+        given(directorySync.status(TENANT)).willReturn(java.util.Optional.of(new DirectorySyncService.SyncState(
+                UUID.randomUUID(), "ad-demo", DirectorySyncService.State.SUCCESS,
+                java.time.Instant.parse("2026-10-28T10:00:00Z"), null, 2)));
+
+        mvc.perform(get("/api/admin/overview").with(adminJwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lastDirectorySyncAt").value("2026-10-28T10:00:00Z"));
     }
 
     @Test
