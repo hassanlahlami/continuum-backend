@@ -1,6 +1,7 @@
 package com.continuum.iam.internal;
 
 import com.continuum.audittrail.api.AuditTrailService;
+import com.continuum.iam.api.AdminDirectory;
 import com.continuum.iam.api.IdentityProviderAdmin;
 import com.continuum.iam.api.UserAccountActionService;
 import java.util.UUID;
@@ -46,5 +47,11 @@ class UserAccountActionConfig {
             DataSource dataSource, AuditTrailService auditTrail, IdentityProviderAdmin identity,
             @Value("${continuum.db.dialect:postgresql}") String dialect) {
         return new JdbcUserAccountActionService(dataSource, auditTrail, identity, "oracle".equalsIgnoreCase(dialect));
+    }
+
+    @Bean
+    AdminDirectory adminDirectory(DataSource dataSource,
+                                  @Value("${continuum.db.dialect:postgresql}") String dialect) {
+        return new JdbcAdminDirectory(dataSource, "oracle".equalsIgnoreCase(dialect));
     }
 }
