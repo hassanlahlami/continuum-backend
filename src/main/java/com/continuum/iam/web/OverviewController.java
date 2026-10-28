@@ -1,6 +1,7 @@
 package com.continuum.iam.web;
 
 import com.continuum.iam.api.AdminDirectory;
+import com.continuum.iam.api.SodConflictDirectory;
 import gen.admin.iam.api.OverviewApi;
 import gen.admin.iam.model.AdminOverview;
 import java.util.UUID;
@@ -12,18 +13,21 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * System Admin home (contract {@code admin/tenancy-iam.yaml}). Only {@code usersWithoutAssignment} has a source
- * today; the other KPIs (change requests, publications, alerts, static SoD conflicts, directory sync, licence,
- * connectors) have no backing table yet and are left absent rather than invented.
+ * System Admin home (contract {@code admin/tenancy-iam.yaml}). {@code usersWithoutAssignment} and
+ * {@code staticSodConflicts} have a source today. {@code lastDirectorySyncAt} stays absent: no synchronisation
+ * history is persisted yet (see {@code UsersController#getDirectorySyncStatus}). The other KPIs (change requests,
+ * publications, alerts, licence, connectors) have no backing table and are left absent rather than invented.
  */
 @RestController
 @RequestMapping("/api/admin")
 public class OverviewController implements OverviewApi {
 
     private final AdminDirectory directory;
+    private final SodConflictDirectory sodConflicts;
 
-    public OverviewController(AdminDirectory directory) {
+    public OverviewController(AdminDirectory directory, SodConflictDirectory sodConflicts) {
         this.directory = directory;
+        this.sodConflicts = sodConflicts;
     }
 
     @Override
@@ -37,6 +41,7 @@ public class OverviewController implements OverviewApi {
         // Reaching this point means the database answered, hence OK; no probe exists for DEGRADED/DOWN yet.
         return ResponseEntity.ok(new AdminOverview()
                 .health(AdminOverview.HealthEnum.OK)
-                .usersWithoutAssignment((int) directory.countUsersWithoutAssignment(tenant)));
+                .usersWithoutAssignment((int) directory.countUsersWithoutAssignment(tenant))
+                .staticSodConflicts(sodConflicts.listStaticConflicts(tenant).size()));
     }
 }
