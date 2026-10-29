@@ -19,5 +19,11 @@ public record ErrorLogProperties(
         @DefaultValue({"ERROR", "WARN"}) List<String> levels,
         @DefaultValue("1d") String trendInterval,
         @DefaultValue("200") int maxGroups,
-        @DefaultValue("20") int maxNodes) {
+        @DefaultValue("20") int maxNodes,
+        @DefaultValue("trace.id") String traceIdField,
+        @DefaultValue("span.id") String spanIdField,
+        @DefaultValue("span.parent.id") String parentSpanIdField,
+        @DefaultValue("service.name") String serviceField,
+        @DefaultValue("event.action") String spanNameField,
+        @DefaultValue("500") int maxTraceEvents) {
 }

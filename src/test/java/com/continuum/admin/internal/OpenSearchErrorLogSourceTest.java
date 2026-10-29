@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test;
 class OpenSearchErrorLogSourceTest {
 
     private final ErrorLogProperties props = new ErrorLogProperties("", "", "", "continuum-logs-*", "@timestamp",
-            "log.level", "event.code", "message", "service.node.name", List.of("ERROR", "WARN"), "1d", 200, 20);
+            "log.level", "event.code", "message", "service.node.name", List.of("ERROR", "WARN"), "1d", 200, 20,
+            "trace.id", "span.id", "span.parent.id", "service.name", "event.action", 500);
 
     @Test
     void parsesBuckets() throws Exception {
