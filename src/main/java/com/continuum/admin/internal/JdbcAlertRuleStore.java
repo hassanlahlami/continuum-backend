@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -30,9 +29,9 @@ class JdbcAlertRuleStore implements AlertRuleStore {
     private final AuditTrailService auditTrail;
     private final boolean oracle;
 
-    JdbcAlertRuleStore(DataSource dataSource, AuditTrailService auditTrail,
+    JdbcAlertRuleStore(PlatformWriteConfig.PlatformWrite platform, AuditTrailService auditTrail,
                        @Value("${continuum.db.dialect:postgresql}") String dialect) {
-        this.jdbc = new JdbcTemplate(dataSource);
+        this.jdbc = new JdbcTemplate(platform.dataSource());
         this.auditTrail = auditTrail;
         this.oracle = "oracle".equalsIgnoreCase(dialect);
     }

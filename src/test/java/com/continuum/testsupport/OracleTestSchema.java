@@ -164,9 +164,10 @@ public final class OracleTestSchema {
         String callback = read(new FileSystemResource(
                 scripts.resolve("platform").resolve("afterMigrate__grant_entity_access.sql")))
                 .replace("${entityUser}", entityUser.toUpperCase(Locale.ROOT))
+                .replace("${platformAppUser}", "")
                 // Les tests ne chargent qu'une partie des scripts platform : un GRANT ciblé sur une table
                 // absente (ORA-00942) n'est pas une erreur ici (le callback de production reste strict).
-                .replaceAll("(?m)^([ \t]*)(EXECUTE IMMEDIATE 'GRANT (?:INSERT, )?UPDATE ON [^;]*;)",
+                .replaceAll("(?m)^([ \t]*)(EXECUTE IMMEDIATE 'GRANT [A-Z, ]+ ON \"[A-Z_]+\" TO [^;]*;)",
                         "$1BEGIN $2 EXCEPTION WHEN OTHERS THEN IF SQLCODE <> -942 THEN RAISE; END IF; END;");
         StringBuilder block = new StringBuilder();
         for (String line : callback.split("\\R")) {

@@ -54,7 +54,7 @@ class JdbcAlertRuleStoreTest {
 
     @Test
     void createListToggleUpdateDelete() {
-        JdbcAlertRuleStore s = new JdbcAlertRuleStore(dataSource, audit, "postgresql");
+        JdbcAlertRuleStore s = new JdbcAlertRuleStore(new PlatformWriteConfig.PlatformWrite(dataSource), audit, "postgresql");
         Rule created = s.create(new Rule(null, "CBS down", "CTN-INT-0102", 5, "PT10M",
                 List.of("IN_APP", "EMAIL", "EMAIL"), true), TENANT, USER);
         assertThat(created.id()).isNotNull();
