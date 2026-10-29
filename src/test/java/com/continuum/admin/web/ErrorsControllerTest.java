@@ -46,6 +46,8 @@ class ErrorsControllerTest {
     @MockitoBean
     private ErrorLogSource source;
     @MockitoBean
+    private com.continuum.admin.AlertRuleStore alertRuleStore;
+    @MockitoBean
     private JwtDecoder jwtDecoder;
 
     @Test
