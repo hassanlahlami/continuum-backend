@@ -290,6 +290,32 @@
             </configuration>
           </execution>
           <execution>
+            <id>generate-admin-ops</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/admin/operations.yaml.
+                   Régénérer via `npx @redocly/cli bundle admin/operations.yaml -o …/src/main/openapi/operations.bundled.yaml`. -->
+              <inputSpec>src/main/openapi/operations.bundled.yaml</inputSpec>
+              <generatorName>spring</generatorName>
+              <library>spring-boot</library>
+              <apiPackage>gen.admin.ops.api</apiPackage>
+              <modelPackage>gen.admin.ops.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <interfaceOnly>true</interfaceOnly>
+                <useSpringBoot3>true</useSpringBoot3>
+                <useTags>true</useTags>
+                <documentationProvider>none</documentationProvider>
+                <openApiNullable>false</openApiNullable>
+                <useJakartaEe>true</useJakartaEe>
+                <skipDefaultInterface>false</skipDefaultInterface>
+              </configOptions>
+            </configuration>
+          </execution>
+          <execution>
             <id>generate-internal-keycloak</id>
             <goals><goal>generate</goal></goals>
             <configuration>
