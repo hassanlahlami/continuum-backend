@@ -36,7 +36,7 @@ public class SchemaVersionVerifier {
      * {@code V202610141000__ccm_run.sql}). À <strong>relever</strong> quand une fonctionnalité du
      * backend commence à dépendre d'une migration plus récente.
      */
-    public static final long REQUIRED_SCHEMA_VERSION = 202610281000L;
+    public static final long REQUIRED_SCHEMA_VERSION = 202610291100L;
 
     /** Schéma plus ancien que {@link #REQUIRED_SCHEMA_VERSION}, ou historique Flyway illisible. */
     public static final String EVENT_SCHEMA_OUTDATED = "CTN-DB-0003";
