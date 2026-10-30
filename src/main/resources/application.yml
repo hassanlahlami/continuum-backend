@@ -39,6 +39,9 @@ spring:
 
 # Profil de deploiement : all | app | admin | worker (§4.3.2).
 continuum:
+  cors:
+    # Origines des fronts autorisees (liste separee par des virgules). Dev : app-web :4201, admin-web :4202.
+    allowed-origins: ${CONTINUUM_CORS_ALLOWED_ORIGINS:http://localhost:8080,http://localhost:4201,http://localhost:4202}
   internal:
     # Client Keycloak (compte de service) autorise a appeler /internal/** (client credentials).
     client-id: ${CONTINUUM_INTERNAL_CLIENT_ID:continuum-keycloak}
