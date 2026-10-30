@@ -45,6 +45,14 @@ class SecurityChainsTest {
     }
 
     @Test
+    void corsPreflightAllowedFromAdminDevOrigin() throws Exception {
+        mvc.perform(options("/api/app/ping").header("Origin", "http://localhost:4202")
+                        .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:4202"));
+    }
+
+    @Test
     void corsPreflightRejectedFromOtherOrigin() throws Exception {
         mvc.perform(options("/api/app/ping").header("Origin", "http://evil.example")
                         .header("Access-Control-Request-Method", "GET"))

@@ -52,6 +52,9 @@ Paramètres **techniques** seulement (le métier se paramètre en base, par tena
 (`all`|`app`|`admin`|`worker`). Détail : `src/main/resources/application.yml` et
 `Instructions/docs/exploitation/DEPLOIEMENT.md`.
 
+**CORS** : `CONTINUUM_CORS_ALLOWED_ORIGINS` (liste séparée par des virgules, propriété `continuum.cors.allowed-origins`) ;
+défaut dev `http://localhost:8080,http://localhost:4201,http://localhost:4202` — à fixer explicitement en prod.
+
 **Synchronisation annuaire** (job planifié, désactivé par défaut) : `CONTINUUM_DIRECTORY_SYNC_ENABLED=true`,
 `CONTINUUM_DIRECTORY_SYNC_SOURCE` (nom du composant LDAP Keycloak, sim : `ad-banque`),
 `CONTINUUM_DIRECTORY_SYNC_CLIENT_ID` (`continuum-directory-sync`), `CONTINUUM_DIRECTORY_SYNC_CLIENT_SECRET`

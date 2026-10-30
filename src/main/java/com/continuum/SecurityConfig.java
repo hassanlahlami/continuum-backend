@@ -51,7 +51,7 @@ public class SecurityConfig {
     /** CORS pour les fronts (origines configurables, {@code continuum.cors.allowed-origins}). */
     @Bean
     CorsConfigurationSource corsConfigurationSource(
-            @Value("${continuum.cors.allowed-origins:http://localhost:8080}") List<String> origins) {
+            @Value("${continuum.cors.allowed-origins}") List<String> origins) {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(origins);
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
