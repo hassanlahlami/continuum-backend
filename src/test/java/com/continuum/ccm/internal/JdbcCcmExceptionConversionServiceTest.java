@@ -72,6 +72,8 @@ class JdbcCcmExceptionConversionServiceTest {
         run(pg.resolve("V202610091300__entity_finding.sql"));
         run(pg.resolve("V202610091500__finding_frap.sql"));
         run(pg.resolve("V202610121000__ccm_exception.sql"));
+        run(pg.resolve("V202610141000__ccm_run.sql"));
+        run(pg.resolve("V202611011000__ccm_exception_run_mission.sql"));
         runCp("ccm-convert-seed.sql");
 
         auditTrail = new JdbcAuditTrailService(dataSource, "k".getBytes(StandardCharsets.UTF_8));

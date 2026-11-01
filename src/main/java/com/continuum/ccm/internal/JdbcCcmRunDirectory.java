@@ -48,14 +48,16 @@ public class JdbcCcmRunDirectory implements CcmRunDirectory {
     @Override
     public void record(RunRecord run) {
         String status = (run.problemDetail() == null ? Status.SUCCEEDED : Status.FAILED).name();
+        UUID runId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO ccm_run (id, tenant_id, control_code, status, trigger_type, started_at,
                                      finished_at, population_size, exceptions_count, data_source,
                                      parameters_used, problem_detail)
-                VALUES (gen_random_uuid(), :tenant, :code, :status, :trigger, :started, :finished,
+                VALUES (:runId, :tenant, :code, :status, :trigger, :started, :finished,
                         :population, :exceptions, :dataSource, CAST(:params AS jsonb), :problem)
                 """,
                 new MapSqlParameterSource()
+                        .addValue("runId", runId)
                         .addValue("tenant", run.tenantId())
                         .addValue("code", run.controlCode())
                         .addValue("status", status)
@@ -67,6 +69,21 @@ public class JdbcCcmRunDirectory implements CcmRunDirectory {
                         .addValue("dataSource", run.dataSource())
                         .addValue("params", CcmExceptionJson.object(run.parametersUsed()))
                         .addValue("problem", run.problemDetail()));
+        linkExceptions(runId, run);
+    }
+
+    /** Rattache au run les exceptions qu'il vient de produire (même tenant/contrôle, détectées depuis son début). */
+    private void linkExceptions(UUID runId, RunRecord run) {
+        if (run.exceptionsCount() <= 0) {
+            return;
+        }
+        jdbc.update("""
+                UPDATE ccm_exception SET run_id = :runId
+                WHERE tenant_id = :tenant AND control_code = :code AND run_id IS NULL AND detected_at >= :since
+                """,
+                new MapSqlParameterSource().addValue("runId", runId).addValue("tenant", run.tenantId())
+                        .addValue("code", run.controlCode())
+                        .addValue("since", run.startedAt() == null ? run.finishedAt() : run.startedAt()));
     }
 
     @Override

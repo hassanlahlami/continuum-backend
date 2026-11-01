@@ -59,6 +59,8 @@ class JdbcSodMonitoringTest {
         run(new FileSystemResource(pg.resolve("V202610091300__entity_finding.sql")));
         run(new FileSystemResource(pg.resolve("V202610091500__finding_frap.sql")));
         run(new FileSystemResource(pg.resolve("V202610121000__ccm_exception.sql")));
+        run(new FileSystemResource(pg.resolve("V202610141000__ccm_run.sql")));
+        run(new FileSystemResource(pg.resolve("V202611011000__ccm_exception_run_mission.sql")));
         run(new ClassPathResource("iam-sod-seed.sql")); // user aa détient write+validate+review ; règle BLOCK write/validate
 
         monitoring = new JdbcSodMonitoring(dataSource);

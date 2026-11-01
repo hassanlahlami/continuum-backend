@@ -74,9 +74,9 @@ public class OracleCcmExceptionConversionService implements CcmExceptionConversi
                         :critCode, :critLabel, 'CCM', :fact, :criterion)
                 """, insert);
 
-        jdbc.update("UPDATE ccm_exception SET finding_id = :finding, version = version + 1"
+        jdbc.update("UPDATE ccm_exception SET finding_id = :finding, mission_id = :mission, version = version + 1"
                 + " WHERE id = :id AND tenant_id = :tenant",
-                new MapSqlParameterSource().addValue("finding", raw(findingId))
+                new MapSqlParameterSource().addValue("finding", raw(findingId)).addValue("mission", raw(command.missionId()))
                         .addValue("id", raw(command.exceptionId())).addValue("tenant", raw(command.tenantId())));
 
         String payload = "{\"action\":\"convert\",\"findingId\":\"%s\",\"missionId\":\"%s\"}"

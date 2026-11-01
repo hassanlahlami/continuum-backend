@@ -51,7 +51,7 @@ public class JdbcCcmExceptionDirectory implements CcmExceptionDirectory {
             SELECT ce.id, ce.org_unit_id, ou.code AS unit_code, ou.label->>'fr' AS unit_label, ce.reference,
                    ce.control_code, ce.title, ce.status_code, ce.status_label, ce.criticality_code,
                    ce.criticality_label, ce.detected_at, ce.assignee_user_id, ce.dismissal_justification,
-                   ce.finding_id, ce.source_record::text AS source_record
+                   ce.finding_id, ce.run_id, ce.mission_id, ce.source_record::text AS source_record
             """ + FROM;
 
     private static final RowMapper<Row> MAPPER = (rs, i) -> new Row(
@@ -70,6 +70,8 @@ public class JdbcCcmExceptionDirectory implements CcmExceptionDirectory {
             rs.getObject("assignee_user_id", UUID.class),
             rs.getString("dismissal_justification"),
             rs.getObject("finding_id", UUID.class),
+            rs.getObject("run_id", UUID.class),
+            rs.getObject("mission_id", UUID.class),
             rs.getString("source_record"));
 
     private final NamedParameterJdbcTemplate jdbc;
