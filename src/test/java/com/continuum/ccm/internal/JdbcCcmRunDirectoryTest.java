@@ -35,6 +35,8 @@ class JdbcCcmRunDirectoryTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
+    private static final UUID LINK_TENANT = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
+
     private static DataSource dataSource;
     private static CcmRunDirectory directory;
 
@@ -53,7 +55,16 @@ class JdbcCcmRunDirectoryTest {
         jt.execute("DROP SCHEMA IF EXISTS platform CASCADE");
         jt.execute("DROP SCHEMA public CASCADE");
         jt.execute("CREATE SCHEMA public");
+        run(pg.resolve("V202609300900__platform_feature_catalog.sql"));
+        run(pg.resolve("R__feature_catalog.sql"));
+        run(pg.resolve("V202609301000__entity_iam_structure.sql"));
+        run(pg.resolve("V202610091200__entity_mission.sql"));
+        run(pg.resolve("V202610091300__entity_finding.sql"));
+        run(pg.resolve("V202610091500__finding_frap.sql"));
+        run(pg.resolve("V202610091600__ccm_control.sql"));
+        run(pg.resolve("V202610121000__ccm_exception.sql"));
         run(pg.resolve("V202610141000__ccm_run.sql"));
+        run(pg.resolve("V202611011000__ccm_exception_run_mission.sql"));
         directory = new JdbcCcmRunDirectory(dataSource);
     }
 
@@ -85,5 +96,23 @@ class JdbcCcmRunDirectoryTest {
         assertThat(latest.get("COMPTES-DORMANTS").status()).isEqualTo(Status.SUCCEEDED);
         assertThat(latest.get("COMPTES-DORMANTS").populationSize()).isNull();
         assertThat(latest.get("COMPTES-DORMANTS").exceptionsCount()).isEqualTo(1);
+    }
+
+    @Test
+    void linksNewExceptionsToTheRunThatProducedThem() {
+        JdbcTemplate jt = new JdbcTemplate(dataSource);
+        jt.update("INSERT INTO ccm_exception (id, tenant_id, control_code, reference, title)"
+                + " VALUES (gen_random_uuid(), ?, 'LINK-CTL', 'REF-LINK-1', 'x')", LINK_TENANT);
+        jt.update("INSERT INTO ccm_exception (id, tenant_id, control_code, reference, title, detected_at)"
+                + " VALUES (gen_random_uuid(), ?, 'LINK-CTL', 'REF-LINK-OLD', 'x', now() - interval '1 day')", LINK_TENANT);
+        OffsetDateTime start = OffsetDateTime.now().minusMinutes(1);
+        directory.record(new RunRecord(LINK_TENANT, "LINK-CTL", Trigger.SCHEDULE,
+                start, OffsetDateTime.now(), null, 1, null, null, null));
+
+        UUID runId = jt.queryForObject("SELECT id FROM ccm_run WHERE control_code = 'LINK-CTL'", UUID.class);
+        assertThat(jt.queryForObject(
+                "SELECT run_id FROM ccm_exception WHERE reference = 'REF-LINK-1'", UUID.class)).isEqualTo(runId);
+        assertThat(jt.queryForObject(
+                "SELECT run_id FROM ccm_exception WHERE reference = 'REF-LINK-OLD'", UUID.class)).isNull();
     }
 }

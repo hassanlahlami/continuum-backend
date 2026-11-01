@@ -37,6 +37,8 @@ class OracleCcmRunDirectoryTest {
 
     private static final UUID TENANT = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
+    private static final UUID LINK_TENANT = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
+
     private static DriverManagerDataSource dataSource;
     private static CcmRunDirectory directory;
 
@@ -58,7 +60,15 @@ class OracleCcmRunDirectoryTest {
                   END LOOP;
                 END;
                 """);
+        run(new FileSystemResource(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql")));
+        run(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091200__entity_mission.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091300__entity_finding.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091500__finding_frap.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610121000__ccm_exception.sql")));
         run(new FileSystemResource(oracle.resolve("entity").resolve("V202610141000__ccm_run.sql")));
+        run(new FileSystemResource(oracle.resolve("entity").resolve("V202611011000__ccm_exception_run_mission.sql")));
         directory = new OracleCcmRunDirectory(dataSource);
 
         OffsetDateTime t0 = OffsetDateTime.now().minusHours(2);
@@ -102,5 +112,26 @@ class OracleCcmRunDirectoryTest {
                     assertThat(v.parametersUsedJson()).isNull();
                 });
         assertThat(directory.findById(TENANT, UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    void linksNewExceptionsToTheRunThatProducedThem() {
+        JdbcTemplate jt = new JdbcTemplate(dataSource);
+        jt.update("INSERT INTO ccm_exception (id, tenant_id, control_code, reference, title)"
+                + " VALUES (SYS_GUID(), HEXTORAW('000000000000000000000000000000A1'), 'LINK-CTL', 'REF-LINK-1', 'x')");
+        jt.update("INSERT INTO ccm_exception (id, tenant_id, control_code, reference, title, detected_at)"
+                + " VALUES (SYS_GUID(), HEXTORAW('000000000000000000000000000000A1'), 'LINK-CTL', 'REF-LINK-OLD', 'x',"
+                + " SYSTIMESTAMP - INTERVAL '1' DAY)");
+        OffsetDateTime start = OffsetDateTime.now().minusMinutes(1);
+        directory.record(new RunRecord(LINK_TENANT, "LINK-CTL", Trigger.SCHEDULE,
+                start, OffsetDateTime.now(), null, 1, null, null, null));
+
+        Integer linked = jt.queryForObject("SELECT COUNT(*) FROM ccm_exception e JOIN ccm_run r ON r.id = e.run_id"
+                + " WHERE e.reference = 'REF-LINK-1' AND r.control_code = 'LINK-CTL'", Integer.class);
+        Integer old = jt.queryForObject(
+                "SELECT COUNT(*) FROM ccm_exception WHERE reference = 'REF-LINK-OLD' AND run_id IS NOT NULL",
+                Integer.class);
+        assertThat(linked).isEqualTo(1);
+        assertThat(old).isZero();
     }
 }

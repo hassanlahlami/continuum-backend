@@ -73,7 +73,12 @@ class CcmRunsControllerTest {
         run(pg.resolve("R__feature_catalog.sql"));
         run(pg.resolve("V202609301000__entity_iam_structure.sql"));
         run(pg.resolve("V202610091600__ccm_control.sql"));
+        run(pg.resolve("V202610091200__entity_mission.sql"));
+        run(pg.resolve("V202610091300__entity_finding.sql"));
+        run(pg.resolve("V202610091500__finding_frap.sql"));
+        run(pg.resolve("V202610121000__ccm_exception.sql"));
         run(pg.resolve("V202610141000__ccm_run.sql"));
+        run(pg.resolve("V202611011000__ccm_exception_run_mission.sql"));
         runCp("ccm-controls-seed.sql");
 
         runs = new JdbcCcmRunDirectory(dataSource);

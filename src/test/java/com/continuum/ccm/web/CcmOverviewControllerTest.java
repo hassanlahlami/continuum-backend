@@ -72,6 +72,7 @@ class CcmOverviewControllerTest {
         run(pg.resolve("V202610091600__ccm_control.sql"));
         run(pg.resolve("V202610121000__ccm_exception.sql"));
         run(pg.resolve("V202610141000__ccm_run.sql"));
+        run(pg.resolve("V202611011000__ccm_exception_run_mission.sql"));
         runCp("ccm-overview-seed.sql");
 
         controller = new CcmOverviewController(

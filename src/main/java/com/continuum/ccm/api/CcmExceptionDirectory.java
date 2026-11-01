@@ -32,6 +32,8 @@ public interface CcmExceptionDirectory {
             UUID assigneeUserId,
             String dismissalJustification,
             UUID findingId,
+            UUID runId,
+            UUID missionId,
             String sourceRecordJson) {
     }
 

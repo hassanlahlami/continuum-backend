@@ -187,6 +187,7 @@ public class CcmController implements CcmExceptionsApi {
                 .detectedAt(r.detectedAt())
                 .dismissalJustification(r.dismissalJustification())
                 .findingId(r.findingId())
+                .runId(r.runId())
                 .sourceRecord(parseJson(r.sourceRecordJson()))
                 .availableActions(toActions(triage.availableActions(tenant, user, view)));
         if (r.criticalityCode() != null) {

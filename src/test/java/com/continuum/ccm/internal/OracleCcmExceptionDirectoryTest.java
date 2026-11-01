@@ -44,6 +44,8 @@ class OracleCcmExceptionDirectoryTest {
         db.entity("V202610091300__entity_finding.sql");
         db.entity("V202610091500__finding_frap.sql");
         db.entity("V202610121000__ccm_exception.sql");
+        db.entity("V202610141000__ccm_run.sql");
+        db.entity("V202611011000__ccm_exception_run_mission.sql");
         db.seed(new ClassPathResource("ccm-triage-oracle-seed.sql"));
 
         directory = new OracleCcmExceptionDirectory(dataSource);

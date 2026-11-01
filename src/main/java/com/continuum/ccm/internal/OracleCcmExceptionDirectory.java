@@ -52,7 +52,7 @@ public class OracleCcmExceptionDirectory implements CcmExceptionDirectory {
             SELECT ce.id, ce.org_unit_id, ou.code AS unit_code, JSON_VALUE(ou.label, '$.fr') AS unit_label,
                    ce.reference, ce.control_code, ce.title, ce.status_code, ce.status_label,
                    ce.criticality_code, ce.criticality_label, ce.detected_at, ce.assignee_user_id,
-                   ce.dismissal_justification, ce.finding_id, ce.source_record
+                   ce.dismissal_justification, ce.finding_id, ce.run_id, ce.mission_id, ce.source_record
             """ + FROM;
 
     private static final RowMapper<Row> MAPPER = (rs, i) -> new Row(
@@ -71,6 +71,8 @@ public class OracleCcmExceptionDirectory implements CcmExceptionDirectory {
             uuid(rs.getBytes("assignee_user_id")),
             rs.getString("dismissal_justification"),
             uuid(rs.getBytes("finding_id")),
+            uuid(rs.getBytes("run_id")),
+            uuid(rs.getBytes("mission_id")),
             rs.getString("source_record"));
 
     private final NamedParameterJdbcTemplate jdbc;

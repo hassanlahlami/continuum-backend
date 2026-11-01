@@ -63,8 +63,8 @@ public class JdbcCcmExceptionConversionService implements CcmExceptionConversion
                 command.tenantId(), command.missionId(), missionUnit, exc.reference, exc.title,
                 exc.criticalityCode, exc.criticalityLabel, exc.fact, exc.criterion);
 
-        jdbc.update("UPDATE ccm_exception SET finding_id = ?, version = version + 1 WHERE id = ? AND tenant_id = ?",
-                findingId, command.exceptionId(), command.tenantId());
+        jdbc.update("UPDATE ccm_exception SET finding_id = ?, mission_id = ?, version = version + 1 WHERE id = ? AND tenant_id = ?",
+                findingId, command.missionId(), command.exceptionId(), command.tenantId());
 
         String payload = "{\"action\":\"convert\",\"findingId\":\"%s\",\"missionId\":\"%s\"}"
                 .formatted(findingId, command.missionId());
