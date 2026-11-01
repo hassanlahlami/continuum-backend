@@ -1,5 +1,6 @@
 package com.continuum.iam.internal;
 
+import com.continuum.PlatformWriteConfig.PlatformWrite;
 import com.continuum.audittrail.api.AuditTrailService;
 import com.continuum.iam.api.AdminDirectory;
 import com.continuum.iam.api.DirectoryFederation;
@@ -50,9 +51,9 @@ class UserAccountActionConfig {
 
     @Bean
     UserAccountActionService userAccountActionService(
-            DataSource dataSource, AuditTrailService auditTrail, IdentityProviderAdmin identity,
+            PlatformWrite platform, AuditTrailService auditTrail, IdentityProviderAdmin identity,
             @Value("${continuum.db.dialect:postgresql}") String dialect) {
-        return new JdbcUserAccountActionService(dataSource, auditTrail, identity, "oracle".equalsIgnoreCase(dialect));
+        return new JdbcUserAccountActionService(platform.dataSource(), auditTrail, identity, "oracle".equalsIgnoreCase(dialect));
     }
 
     @Bean
@@ -82,11 +83,11 @@ class UserAccountActionConfig {
     }
 
     @Bean
-    DirectorySyncService directorySyncService(DataSource dataSource, DirectoryFederation federation,
+    DirectorySyncService directorySyncService(PlatformWrite platform, DirectoryFederation federation,
             @org.springframework.beans.factory.annotation.Qualifier("directorySyncExecutor") Executor executor,
             @Value("${continuum.directory-sync.source-code:}") String sourceCode,
             @Value("${continuum.db.dialect:postgresql}") String dialect) {
-        return new JdbcDirectorySyncService(dataSource, "oracle".equalsIgnoreCase(dialect), federation, executor,
+        return new JdbcDirectorySyncService(platform.dataSource(), "oracle".equalsIgnoreCase(dialect), federation, executor,
                 sourceCode);
     }
 }

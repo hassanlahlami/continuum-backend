@@ -1,4 +1,4 @@
-package com.continuum.admin.internal;
+package com.continuum;
 
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,9 +13,9 @@ import org.springframework.util.StringUtils;
  * Without {@code continuum.platform.datasource.url} (PostgreSQL single-schema dev) the primary DataSource is used.
  */
 @Configuration
-class PlatformWriteConfig {
+public class PlatformWriteConfig {
 
-    record PlatformWrite(DataSource dataSource) {
+    public record PlatformWrite(DataSource dataSource) {
     }
 
     @Bean

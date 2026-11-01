@@ -1,5 +1,6 @@
 package com.continuum.admin.internal;
 
+import com.continuum.PlatformWriteConfig;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;

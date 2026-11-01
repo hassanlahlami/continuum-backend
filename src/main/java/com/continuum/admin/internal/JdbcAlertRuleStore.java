@@ -1,6 +1,7 @@
 package com.continuum.admin.internal;
 
 import com.continuum.admin.AlertRuleStore;
+import com.continuum.PlatformWriteConfig;
 import com.continuum.audittrail.api.AuditEntry;
 import com.continuum.audittrail.api.AuditTrailService;
 import java.nio.ByteBuffer;
