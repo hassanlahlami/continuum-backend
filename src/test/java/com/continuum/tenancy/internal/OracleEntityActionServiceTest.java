@@ -33,6 +33,7 @@ class OracleEntityActionServiceTest {
     private static final String ENTITY_HEX = "00000000000000000000000000000002";
 
     private static DriverManagerDataSource dataSource;
+    private static DriverManagerDataSource platformDataSource;
     private static JdbcTemplate platform;
     private static OracleAuditTrailService auditTrail;
 
@@ -40,6 +41,7 @@ class OracleEntityActionServiceTest {
     static void setUp() {
         OracleTestSchema db = OracleTestSchema.connect().reset();
         dataSource = db.dataSource();
+        platformDataSource = db.platformDataSource();
         platform = db.platformJdbc();
         db.platform("V202609300900__platform_feature_catalog.sql");
         db.platform("V202609301200__platform_tenant.sql");
@@ -57,7 +59,7 @@ class OracleEntityActionServiceTest {
     }
 
     private static EntityView act(String action, Integer version) {
-        return new OracleEntityActionService(dataSource, auditTrail)
+        return new OracleEntityActionService(platformDataSource, auditTrail)
                 .perform(new EntityActionCommand(ACTOR_TENANT, ACTOR, ENTITY, action, version));
     }
 

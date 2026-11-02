@@ -36,6 +36,7 @@ class OracleUserAccountActionServiceTest {
     private static final String TENANT_HEX = "00000000000000000000000000000001";
 
     private static DriverManagerDataSource dataSource;
+    private static DriverManagerDataSource platformDataSource;
     private static JdbcTemplate platform;
     private static OracleAuditTrailService auditTrail;
     private static final List<String> idpCalls = new ArrayList<>();
@@ -44,6 +45,7 @@ class OracleUserAccountActionServiceTest {
     static void setUp() {
         OracleTestSchema db = OracleTestSchema.connect().reset();
         dataSource = db.dataSource();
+        platformDataSource = db.platformDataSource();
         platform = db.platformJdbc();
         db.platform("V202609300900__platform_feature_catalog.sql");
         db.platform("V202609301200__platform_tenant.sql");
@@ -76,7 +78,7 @@ class OracleUserAccountActionServiceTest {
                 idpCalls.add("close-sessions");
             }
         };
-        return new JdbcUserAccountActionService(dataSource, auditTrail, idp, true)
+        return new JdbcUserAccountActionService(platformDataSource, auditTrail, idp, true)
                 .perform(new UserActionCommand(ACTOR_TENANT, ACTOR, USER, action, version, comment));
     }
 

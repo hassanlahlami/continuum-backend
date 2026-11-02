@@ -17,6 +17,7 @@ class OracleUserActionConcurrencyTest extends UserActionConcurrencyContract {
     private static final String TENANT_HEX = "00000000000000000000000000000001";
 
     private static DataSource dataSource;
+    private static DataSource platformDataSource;
     private static JdbcTemplate platform;
     private static OracleAuditTrailService audit;
 
@@ -24,6 +25,7 @@ class OracleUserActionConcurrencyTest extends UserActionConcurrencyContract {
     static void setUp() {
         OracleTestSchema db = OracleTestSchema.connect().reset();
         dataSource = db.dataSource();
+        platformDataSource = db.platformDataSource();
         platform = db.platformJdbc();
         db.platform("V202609300900__platform_feature_catalog.sql");
         db.platform("V202609301200__platform_tenant.sql");
@@ -38,7 +40,7 @@ class OracleUserActionConcurrencyTest extends UserActionConcurrencyContract {
 
     @Override
     UserAccountActionService service() {
-        return new JdbcUserAccountActionService(dataSource, audit, NOOP_IDP, true);
+        return new JdbcUserAccountActionService(platformDataSource, audit, NOOP_IDP, true);
     }
 
     @Override
