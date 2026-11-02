@@ -79,6 +79,11 @@ public final class OracleTestSchema {
         return entity;
     }
 
+    /** DataSource du compte PLATFORM : celle que la production injecte aux services qui écrivent {@code platform.*}. */
+    public DriverManagerDataSource platformDataSource() {
+        return platform;
+    }
+
     /** Connexion du propriétaire du schéma partagé, pour écrire des données de test {@code platform.*}. */
     public JdbcTemplate platformJdbc() {
         return new JdbcTemplate(platform);

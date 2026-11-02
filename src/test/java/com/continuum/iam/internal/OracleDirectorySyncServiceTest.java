@@ -14,12 +14,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
 class OracleDirectorySyncServiceTest extends DirectorySyncContract {
 
     private static DataSource dataSource;
+    private static DataSource platformDataSource;
     private static JdbcTemplate platform;
 
     @BeforeAll
     static void setUp() {
         OracleTestSchema db = OracleTestSchema.connect().reset();
         dataSource = db.dataSource();
+        platformDataSource = db.platformDataSource();
         platform = db.platformJdbc();
         // One call: the grant callback runs after it and requires directory_sync_state to exist.
         db.platform("V202609300900__platform_feature_catalog.sql", "V202609301200__platform_tenant.sql",
@@ -39,6 +41,6 @@ class OracleDirectorySyncServiceTest extends DirectorySyncContract {
 
     @Override
     DirectorySyncService service(DirectoryFederation federation, Executor executor) {
-        return new JdbcDirectorySyncService(dataSource, true, federation, executor, SOURCE);
+        return new JdbcDirectorySyncService(platformDataSource, true, federation, executor, SOURCE);
     }
 }
