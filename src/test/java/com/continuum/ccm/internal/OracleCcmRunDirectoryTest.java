@@ -7,11 +7,10 @@ import com.continuum.ccm.api.CcmRunDirectory.LatestRun;
 import com.continuum.ccm.api.CcmRunDirectory.RunRecord;
 import com.continuum.ccm.api.CcmRunDirectory.Status;
 import com.continuum.ccm.api.CcmRunDirectory.Trigger;
-import java.nio.charset.StandardCharsets;
+import com.continuum.testsupport.OracleTestSchema;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.SQLException;
+import javax.sql.DataSource;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -20,11 +19,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.EncodedResource;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 /**
  * Vérifie l'historique des exécutions CCM ({@code ccm_run}) sur une <strong>vraie base Oracle</strong>
@@ -39,36 +34,23 @@ class OracleCcmRunDirectoryTest {
 
     private static final UUID LINK_TENANT = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
 
-    private static DriverManagerDataSource dataSource;
+    private static DataSource dataSource;
     private static CcmRunDirectory directory;
 
     @BeforeAll
     static void applySchema() {
-        String url = System.getProperty("it.oracle.url");
         Path oracle = Path.of("..", "continuum-migrator", "src", "main", "resources", "db", "oracle")
                 .toAbsolutePath().normalize();
         Assumptions.assumeTrue(Files.isDirectory(oracle), "Scripts Oracle du migrateur introuvables : " + oracle);
 
-        dataSource = new DriverManagerDataSource(
-                url, System.getProperty("it.oracle.user"), System.getProperty("it.oracle.password"));
-        dataSource.setDriverClassName("oracle.jdbc.OracleDriver");
-        JdbcTemplate jt = new JdbcTemplate(dataSource);
-        jt.execute("""
-                BEGIN
-                  FOR t IN (SELECT table_name FROM user_tables) LOOP
-                    EXECUTE IMMEDIATE 'DROP TABLE "' || t.table_name || '" CASCADE CONSTRAINTS PURGE';
-                  END LOOP;
-                END;
-                """);
-        run(new FileSystemResource(oracle.resolve("platform").resolve("V202609300900__platform_feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202609301000__entity_iam_structure.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091200__entity_mission.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091300__entity_finding.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610091500__finding_frap.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610121000__ccm_exception.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202610141000__ccm_run.sql")));
-        run(new FileSystemResource(oracle.resolve("entity").resolve("V202611011000__ccm_exception_run_mission.sql")));
+        OracleTestSchema db = OracleTestSchema.connect().reset();
+        dataSource = db.dataSource();
+        db.platform("V202609300900__platform_feature_catalog.sql");
+        db.seed(new FileSystemResource(oracle.resolve("platform").resolve("R__feature_catalog.sql")));
+        db.entity("V202609301000__entity_iam_structure.sql", "V202610091200__entity_mission.sql",
+                "V202610091300__entity_finding.sql", "V202610091500__finding_frap.sql",
+                "V202610121000__ccm_exception.sql", "V202610141000__ccm_run.sql",
+                "V202611011000__ccm_exception_run_mission.sql");
         directory = new OracleCcmRunDirectory(dataSource);
 
         OffsetDateTime t0 = OffsetDateTime.now().minusHours(2);
@@ -78,14 +60,6 @@ class OracleCcmRunDirectoryTest {
                 t0.plusHours(1), t0.plusHours(1).plusSeconds(5), 1200L, 0, "CBS", null, "connexion CBS perdue"));
         directory.record(new RunRecord(TENANT, "COMPTES-DORMANTS", Trigger.MANUAL,
                 t0.plusMinutes(30), t0.plusMinutes(30).plusSeconds(3), null, 1, null, null, null));
-    }
-
-    private static void run(Resource script) {
-        try (Connection c = dataSource.getConnection()) {
-            ScriptUtils.executeSqlScript(c, new EncodedResource(script, StandardCharsets.UTF_8));
-        } catch (SQLException e) {
-            throw new IllegalStateException("script " + script, e);
-        }
     }
 
     @Test
