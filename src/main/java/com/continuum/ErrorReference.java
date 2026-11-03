@@ -9,12 +9,12 @@ import org.slf4j.MDC;
  * sinon une référence compacte générée. Partagé par {@link ProblemDetailAdvice} (erreurs MVC) et
  * {@link ProblemSecurityHandler} (401/403 de la chaîne de sécurité).
  */
-final class ErrorReference {
+public final class ErrorReference {
 
     private ErrorReference() {
     }
 
-    static String traceId() {
+    public static String traceId() {
         String traceId = MDC.get("traceId");
         return (traceId != null && !traceId.isBlank())
                 ? traceId
