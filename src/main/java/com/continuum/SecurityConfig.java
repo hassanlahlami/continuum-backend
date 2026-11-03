@@ -56,7 +56,7 @@ public class SecurityConfig {
 
     static final String AUDIENCE_ADMIN = "continuum-admin";
     static final String AUDIENCE_APP = "continuum-app";
-    static final int ADMIN_MIN_ACR = 2;
+    public static final int ADMIN_MIN_ACR = 2;
 
     /** CORS pour les fronts (origines configurables, {@code continuum.cors.allowed-origins}). */
     @Bean

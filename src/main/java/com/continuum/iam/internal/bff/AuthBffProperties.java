@@ -12,10 +12,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param cookieSecure {@code Secure} flag of the session cookie (false only for http dev)
  * @param encryptionKey base64 AES key (16/24/32 bytes) protecting refresh tokens at rest; supplied by Vault
  * @param apps      confidential client per front ({@code app}, {@code admin})
+ * @param authUri   browser-facing Keycloak authorization endpoint, empty = derived from the issuer
+ * @param callbackUri absolute URL of {@code /api/auth/callback} as seen by the browser, empty = derived from the
+ *                  request (reverse proxy headers)
  */
 @ConfigurationProperties("continuum.auth.bff")
 public record AuthBffProperties(String tokenUri, String logoutUri, boolean cookieSecure, String encryptionKey,
-        Map<String, Client> apps) {
+        Map<String, Client> apps, String authUri, String callbackUri) {
 
     public record Client(String clientId, String clientSecret) {
     }

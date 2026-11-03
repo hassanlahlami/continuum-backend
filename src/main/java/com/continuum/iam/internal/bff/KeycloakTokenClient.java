@@ -13,7 +13,10 @@ import org.springframework.web.client.RestClient;
 public class KeycloakTokenClient {
 
     /** Outcome of a password grant. {@code invalidGrant} covers wrong password, locked account and missing OTP. */
-    public record TokenResult(boolean invalidGrant, String refreshToken, JsonNode accessClaims) {
+    public record TokenResult(boolean invalidGrant, String refreshToken, JsonNode accessClaims, String errorDescription) {
+        public TokenResult(boolean invalidGrant, String refreshToken, JsonNode accessClaims) {
+            this(invalidGrant, refreshToken, accessClaims, null);
+        }
     }
 
     /** Outcome of a refresh grant; {@code refreshToken} is the (possibly rotated) token to persist. */
@@ -24,15 +27,32 @@ public class KeycloakTokenClient {
     private final ObjectMapper mapper;
     private final String tokenUri;
     private final String logoutUri;
+    private final String authUri;
 
     public KeycloakTokenClient(RestClient.Builder builder, ObjectMapper mapper, String tokenUri, String logoutUri) {
+        this(builder, mapper, tokenUri, logoutUri, null);
+    }
+
+    public KeycloakTokenClient(RestClient.Builder builder, ObjectMapper mapper, String tokenUri, String logoutUri,
+            String authUri) {
         this.http = builder.build();
         this.mapper = mapper;
         this.tokenUri = tokenUri;
         this.logoutUri = logoutUri;
+        this.authUri = authUri;
+    }
+
+    /** Browser-facing authorization endpoint of the realm. */
+    public String authorizationUri() {
+        return authUri;
     }
 
     public TokenResult passwordGrant(AuthBffProperties.Client client, String username, String password) {
+        return passwordGrant(client, username, password, null);
+    }
+
+    /** Password grant, with the one-time code when answering an OTP challenge. */
+    public TokenResult passwordGrant(AuthBffProperties.Client client, String username, String password, String totp) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "password");
         form.add("client_id", client.clientId());
@@ -40,6 +60,26 @@ public class KeycloakTokenClient {
         form.add("username", username);
         form.add("password", password);
         form.add("scope", "openid");
+        if (totp != null) {
+            form.add("totp", totp);
+        }
+        return tokenRequest(form);
+    }
+
+    /** Authorization-code exchange (PKCE) terminated by the BFF with the confidential client. */
+    public TokenResult exchangeCode(AuthBffProperties.Client client, String code, String codeVerifier,
+            String redirectUri) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("grant_type", "authorization_code");
+        form.add("client_id", client.clientId());
+        form.add("client_secret", client.clientSecret());
+        form.add("code", code);
+        form.add("code_verifier", codeVerifier);
+        form.add("redirect_uri", redirectUri);
+        return tokenRequest(form);
+    }
+
+    private TokenResult tokenRequest(MultiValueMap<String, String> form) {
         try {
             JsonNode body = http.post().uri(tokenUri).contentType(MediaType.APPLICATION_FORM_URLENCODED)
                     .body(form).retrieve().body(JsonNode.class);
@@ -47,8 +87,15 @@ public class KeycloakTokenClient {
                     claims(body.path("access_token").asText()));
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode().value() == 400 || e.getStatusCode().value() == 401) {
-                // invalid_grant (wrong credentials, locked, OTP required) — indistinguishable on purpose (no enumeration)
-                return new TokenResult(true, null, null);
+                // invalid_grant (wrong credentials, locked, OTP required): the description only drives the
+                // ACTION_REQUIRED / MFA_REQUIRED outcomes, never the client-facing message (no enumeration)
+                String description = null;
+                try {
+                    description = mapper.readTree(e.getResponseBodyAsString()).path("error_description").asText(null);
+                } catch (Exception ignored) {
+                    // body not JSON
+                }
+                return new TokenResult(true, null, null, description);
             }
             throw e;
         }

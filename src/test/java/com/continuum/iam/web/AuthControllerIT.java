@@ -56,18 +56,32 @@ class AuthControllerIT {
     static final String USER = "22222222-2222-2222-2222-222222222222";
     static HttpServer kc;
     static volatile boolean logoutCalled;
+    static volatile String lastTokenForm;
+    static volatile String stepUpAcr;
 
     @BeforeAll
     static void startKeycloak() throws Exception {
         kc = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         kc.createContext("/realms/r/protocol/openid-connect/token", ex -> {
             String form = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            boolean ok = (form.contains("password=good") || form.contains("refresh_token=rt-1"))
+            boolean needsOtp = form.contains("password=needotp");
+            boolean otpOk = form.contains("totp=123456");
+            boolean codeGrant = form.contains("grant_type=authorization_code");
+            lastTokenForm = form;
+            boolean ok = (form.contains("password=good") || form.contains("refresh_token=rt-1") || (needsOtp && otpOk)
+                    || (codeGrant && form.contains("code=good-code") && form.contains("code_verifier=")))
                     && form.contains("client_secret=s3cret");
             String body;
             int code;
-            if (ok) {
-                String payload = "{\"sub\":\"" + USER + "\",\"acr\":\"1\"}";
+            if (needsOtp && !otpOk && !form.contains("totp=")) {
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Otp required\"}";
+                code = 401;
+            } else if (form.contains("password=setup")) {
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Account is not fully set up\"}";
+                code = 400;
+            } else if (ok) {
+                String acr = form.contains("code=good-code") && stepUpAcr != null ? stepUpAcr : "1";
+                String payload = "{\"sub\":\"" + USER + "\",\"acr\":\"" + acr + "\"}";
                 String jwt = "e30." + Base64.getUrlEncoder().withoutPadding()
                         .encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + ".sig";
                 body = "{\"access_token\":\"" + jwt + "\",\"refresh_token\":\"rt-1\",\"expires_in\":300}";
@@ -113,7 +127,8 @@ class AuthControllerIT {
         for (String f : new String[] {"V202609300900__platform_feature_catalog.sql", "R__feature_catalog.sql",
                 "V202609301000__entity_iam_structure.sql", "V202609301100__entity_audit_trail.sql",
                 "V202609301200__platform_tenant.sql", "V202610271100__platform_user_account.sql",
-                "V202611021000__platform_bff_session.sql"}) {
+                "V202611021000__platform_bff_session.sql",
+                "V202611031000__auth_session_app.sql"}) {
             try (Connection c = ds.getConnection()) {
                 ScriptUtils.executeSqlScript(c,
                         new EncodedResource(new FileSystemResource(pg.resolve(f)), StandardCharsets.UTF_8));
@@ -248,8 +263,132 @@ class AuthControllerIT {
         mvc.perform(get("/api/admin/nothing-here").cookie(new Cookie("CT_SESSION", admin.getValue())))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.reason").doesNotExist());
     }
+    private MvcResult loginAs(String app, String user, String password) throws Exception {
+        String t = csrf();
+        return mvc.perform(post("/api/auth/login").contentType("application/json")
+                .cookie(new Cookie("XSRF-TOKEN", t)).header("X-XSRF-TOKEN", t)
+                .content("{\"app\":\"" + app + "\",\"entity\":\"DEMO\",\"username\":\"" + user
+                        + "\",\"password\":\"" + password + "\"}")).andReturn();
+    }
+
     @Test
     @Order(5)
+    void sessionRowRemembersItsFront() throws Exception {
+        MvcResult ok = loginAs("admin", "dave", "good");
+        Cookie admin = ok.getResponse().getCookie("CT_ADMIN_SESSION");
+        assertThat(new JdbcTemplate(dataSource).queryForObject(
+                "SELECT app FROM platform.auth_session WHERE id_hash = ?", String.class,
+                AuthBffService.hash(admin.getValue()))).isEqualTo("admin");
+        // an admin session cookie replayed as the app cookie opens nothing, even if the name is forged
+        mvc.perform(get("/api/auth/session").cookie(new Cookie("CT_SESSION", admin.getValue())))
+                .andExpect(jsonPath("$.authenticated").value(false));
+    }
+
+    @Test
+    @Order(6)
+    void mfaChallengeThenOtp() throws Exception {
+        MvcResult first = loginAs("app", "carol", "needotp");
+        assertThat(first.getResponse().getStatus()).isEqualTo(200);
+        String body = first.getResponse().getContentAsString();
+        assertThat(body).contains("MFA_REQUIRED").contains("otp").doesNotContain("needotp");
+        String id = com.jayway.jsonpath.JsonPath.read(body, "$.challengeId");
+        String t = csrf();
+        // unknown challenge
+        mvc.perform(post("/api/auth/mfa").contentType("application/json").cookie(new Cookie("XSRF-TOKEN", t))
+                .header("X-XSRF-TOKEN", t).content("{\"challengeId\":\"nope\",\"code\":\"123456\"}"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.reason").value("session-expired"));
+        // wrong code: same answer as wrong credentials, challenge stays usable
+        mvc.perform(post("/api/auth/mfa").contentType("application/json").cookie(new Cookie("XSRF-TOKEN", t))
+                .header("X-XSRF-TOKEN", t).content("{\"challengeId\":\"" + id + "\",\"code\":\"000000\"}"))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.reason").value("invalid-credentials"));
+        MvcResult ok = mvc.perform(post("/api/auth/mfa").contentType("application/json")
+                .cookie(new Cookie("XSRF-TOKEN", t)).header("X-XSRF-TOKEN", t)
+                .content("{\"challengeId\":\"" + id + "\",\"code\":\"123456\"}")).andReturn();
+        assertThat(ok.getResponse().getStatus()).isEqualTo(200);
+        assertThat(ok.getResponse().getContentAsString()).contains("AUTHENTICATED");
+        assertThat(ok.getResponse().getCookie("CT_SESSION")).isNotNull();
+        // single use
+        mvc.perform(post("/api/auth/mfa").contentType("application/json").cookie(new Cookie("XSRF-TOKEN", t))
+                .header("X-XSRF-TOKEN", t).content("{\"challengeId\":\"" + id + "\",\"code\":\"123456\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @Order(7)
+    void pendingRequiredActionsPointToTheBrowserFlow() throws Exception {
+        MvcResult r = loginAs("app", "erin", "setup");
+        assertThat(r.getResponse().getStatus()).isEqualTo(200);
+        assertThat(r.getResponse().getContentAsString()).contains("ACTION_REQUIRED")
+                .contains("/api/auth/authorize");
+    }
+
+    @Test
+    @Order(8)
+    void authorizeCallbackAndStepUp() throws Exception {
+        // returnTo must be an internal route
+        for (String bad : new String[] {"https://evil.example/x", "//evil.example", "/a\\b"}) {
+            mvc.perform(get("/api/auth/authorize").param("entity", "DEMO").param("returnTo", bad))
+                    .andExpect(status().isBadRequest());
+        }
+        mvc.perform(get("/api/auth/authorize").param("entity", "NOPE")).andExpect(status().isBadRequest());
+
+        MvcResult start = mvc.perform(get("/api/auth/authorize").param("entity", "DEMO")
+                .param("app", "admin").param("returnTo", "/missions").param("idp", "corp"))
+                .andExpect(status().isFound()).andReturn();
+        String loc = start.getResponse().getHeader("Location");
+        assertThat(loc).contains("/protocol/openid-connect/auth?").contains("client_id=continuum-admin-bff")
+                .contains("response_type=code").contains("code_challenge_method=S256").contains("code_challenge=")
+                .contains("kc_idp_hint=corp").contains("acr_values=2").contains("redirect_uri=http");
+        Cookie flow = start.getResponse().getCookie("CT_AUTH_STATE");
+        assertThat(flow).isNotNull();
+        assertThat(flow.isHttpOnly()).isTrue();
+        String state = org.springframework.web.util.UriComponentsBuilder.fromUriString(loc).build()
+                .getQueryParams().getFirst("state");
+        state = java.net.URLDecoder.decode(state, StandardCharsets.UTF_8);
+
+        // forged / unbound state
+        mvc.perform(get("/api/auth/callback").param("code", "good-code").param("state", "garbage").cookie(flow))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/auth/callback").param("code", "good-code").param("state", state))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/auth/callback").param("code", "bad-code").param("state", state).cookie(flow))
+                .andExpect(status().isBadRequest());
+
+        stepUpAcr = "2";
+        MvcResult done = mvc.perform(get("/api/auth/callback").param("code", "good-code").param("state", state)
+                .cookie(flow)).andExpect(status().isFound()).andExpect(header().string("Location", "/missions"))
+                .andReturn();
+        assertThat(lastTokenForm).contains("code_verifier=").contains("client_id=continuum-admin-bff");
+        Cookie admin = done.getResponse().getCookie("CT_ADMIN_SESSION");
+        assertThat(admin).isNotNull();
+        mvc.perform(get("/api/auth/session").param("app", "admin").cookie(admin))
+                .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.acr").value(2));
+
+        // step-up of a session opened by /login at acr 1
+        stepUpAcr = null;
+        Cookie low = loginAs("admin", "frank", "good").getResponse().getCookie("CT_ADMIN_SESSION");
+        mvc.perform(get("/api/auth/session").param("app", "admin").cookie(low)).andExpect(jsonPath("$.acr").value(1));
+        mvc.perform(get("/api/auth/step-up").param("app", "admin").param("acr", "2")).andExpect(status().isUnauthorized());
+        MvcResult su = mvc.perform(get("/api/auth/step-up").param("app", "admin").param("acr", "2")
+                .param("returnTo", "/admin/home").cookie(low)).andExpect(status().isFound()).andReturn();
+        String suLoc = su.getResponse().getHeader("Location");
+        assertThat(suLoc).contains("acr_values=2").contains("client_id=continuum-admin-bff");
+        String suState = java.net.URLDecoder.decode(org.springframework.web.util.UriComponentsBuilder
+                .fromUriString(suLoc).build().getQueryParams().getFirst("state"), StandardCharsets.UTF_8);
+        stepUpAcr = "2";
+        MvcResult suDone = mvc.perform(get("/api/auth/callback").param("code", "good-code").param("state", suState)
+                .cookie(su.getResponse().getCookie("CT_AUTH_STATE"))).andExpect(status().isFound())
+                .andExpect(header().string("Location", "/admin/home")).andReturn();
+        // same session cookie, upgraded level (no new cookie)
+        assertThat(suDone.getResponse().getCookie("CT_ADMIN_SESSION")).isNull();
+        mvc.perform(get("/api/auth/session").param("app", "admin").cookie(low)).andExpect(jsonPath("$.acr").value(2));
+        // a step-up for the app front needs the app session
+        mvc.perform(get("/api/auth/step-up").param("acr", "2").cookie(new Cookie("CT_SESSION", low.getValue())))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @Order(9)
     void wrongCredentialsThenRateLimitFromDatabaseParams() throws Exception {
         new JdbcTemplate(dataSource).update("INSERT INTO platform.tenant_param (tenant_id, param_key, param_value)"
                 + " VALUES (?::uuid, 'auth.ratelimit.identifier.max_attempts', '2')", TENANT);
