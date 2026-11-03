@@ -1,0 +1,542 @@
+openapi: 3.1.0
+info:
+  title: Continuum — API d'authentification (BFF)
+  version: 0.1.0
+  x-status: draft
+  description: |
+    Login « REST » via Keycloak (D41, ADR 0014). Le backend (BFF) appelle Keycloak ; les jetons restent côté serveur, le navigateur ne reçoit qu'un cookie de session `HttpOnly; Secure; SameSite=Strict`. SPA et `/api` sont servis sous la **même origine** (reverse proxy) ; un `apiBaseUrl` absolu n'est pas supporté. CSRF double-submit : cookie `XSRF-TOKEN` (lisible par le JS) + en-tête `X-XSRF-TOKEN` sur toute requête non sûre (Spring `csrf.spa()`). Le cookie est posé par `GET /session` (anonyme) ; session et jeton CSRF sont renouvelés après login. Le tenant est résolu par le nom d'hôte, ou le paramètre `entity` (corps ou requête). Le mode `redirect` est **également terminé par le BFF** (Code + PKCE confidentiel côté serveur) : le front n'a qu'un modèle, le cookie ; plus de Bearer dans le navigateur.
+servers:
+  - url: /api/auth
+security: []
+tags:
+  - name: options
+  - name: session
+  - name: login
+  - name: redirect
+paths:
+  /options:
+    get:
+      tags:
+        - options
+      operationId: getLoginOptions
+      summary: Options de connexion du tenant, lues avant l'amorçage (anonyme)
+      description: |
+        `mode` provient du paramètre en base `auth.login.mode` (par tenant ; défaut `redirect` pour l'app `admin`, qui n'est jamais proposée en `rest` tant que le spike `acr` ≥ 2 est négatif — voir ADR 0014 §4).
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/Entity'
+        - name: app
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - app
+              - admin
+      responses:
+        '200':
+          description: Options de connexion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginOptions'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /session:
+    get:
+      tags:
+        - session
+      operationId: getSession
+      summary: État de la session courante (anonyme autorisé ; pose le cookie CSRF)
+      description: |
+        Toujours 200, même sans session (`authenticated: false`), pour ne pas déclencher la redirection du front. Ne renvoie jamais de jeton.
+      x-required-feature: public
+      security: []
+      responses:
+        '200':
+          description: État de session.
+          headers:
+            Set-Cookie:
+              description: Cookie `XSRF-TOKEN` (non HttpOnly) posé ou renouvelé.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionState'
+              examples:
+                anonymous:
+                  value:
+                    authenticated: false
+                authenticated:
+                  value:
+                    authenticated: true
+                    userId: 3f2b8a50-4d4e-4a3a-9a6c-1d2e3f405162
+                    displayName: A. Exemple
+                    acr: 1
+                    expiresAt: '2026-11-02T20:00:00Z'
+                    idleTimeoutSeconds: 1800
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /login:
+    post:
+      tags:
+        - login
+      operationId: login
+      summary: Connexion par identifiant et mot de passe (direct grant côté serveur)
+      description: |
+        Identifiants faux et compte verrouillé donnent la **même** réponse 401 (`reason: invalid-credentials`), sans énumération. Seule la limitation de débit (par tenant+identifiant et par IP) répond 429 avec `Retry-After`. Le corps de la requête n'est jamais journalisé ni republié par le front. Les conditions LoA ne sont pas évaluées dans un flux direct grant : ce flux ne délivre que `acr` = 1.
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Résultat de la tentative (union discriminée sur `status`).
+          headers:
+            Set-Cookie:
+              description: Cookie de session `HttpOnly; Secure; SameSite=Strict` (si `AUTHENTICATED`) et nouveau `XSRF-TOKEN`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResult'
+              examples:
+                authenticated:
+                  value:
+                    status: AUTHENTICATED
+                    session:
+                      authenticated: true
+                      acr: 1
+                      expiresAt: '2026-11-02T20:00:00Z'
+                      idleTimeoutSeconds: 1800
+                mfaRequired:
+                  value:
+                    status: MFA_REQUIRED
+                    challengeId: 9c1f3a52-7d0e-4b1e-8a64-2f5d6e7a8b90
+                    methods:
+                      - otp
+                actionRequired:
+                  value:
+                    status: ACTION_REQUIRED
+                    redirectUrl: /api/auth/authorize?returnTo=/
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/AuthProblem'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /mfa:
+    post:
+      tags:
+        - login
+      operationId: verifyMfa
+      summary: Réponse au défi OTP d'une connexion en cours
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaRequest'
+      responses:
+        '200':
+          description: Session ouverte (`AUTHENTICATED`) ou nouveau défi.
+          headers:
+            Set-Cookie:
+              description: Cookie de session et nouveau `XSRF-TOKEN`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResult'
+        '401':
+          $ref: '#/components/responses/AuthProblem'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /logout:
+    post:
+      tags:
+        - session
+      operationId: logout
+      summary: Ferme la session BFF et la session SSO Keycloak
+      x-required-feature: authenticated
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/CsrfHeader'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '403':
+          $ref: '#/components/responses/CsrfInvalid'
+  /authorize:
+    get:
+      tags:
+        - redirect
+      operationId: startRedirectLogin
+      summary: Démarre le Code + PKCE terminé par le BFF (SSO entreprise, WebAuthn, repli)
+      description: |
+        Navigation (pas XHR). Redirige vers Keycloak ; le callback backend pose le même cookie de session que `/login`, puis redirige vers `returnTo`. `returnTo` doit être une route interne (relative) ; sinon 400.
+      x-required-feature: public
+      parameters:
+        - $ref: '#/components/parameters/Entity'
+        - name: returnTo
+          in: query
+          schema:
+            type: string
+            example: /missions
+        - name: idp
+          in: query
+          description: Fournisseur d'identité d'entreprise (alias issu de `LoginOptions.ssoProviders`).
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirection vers Keycloak.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /step-up:
+    get:
+      tags:
+        - redirect
+      operationId: startStepUp
+      summary: Réauthentification à un niveau `acr` supérieur (signatures, administration)
+      description: |
+        Navigation. Redirige vers Keycloak avec `acr_values` ; le callback met à jour le niveau `acr` de la session existante. Appelé par le front après un problème `reason: step-up-required`.
+      x-required-feature: authenticated
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: acr
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 2
+        - name: returnTo
+          in: query
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirection vers Keycloak.
+        '401':
+          $ref: '#/components/responses/AuthProblem'
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: CT_SESSION
+      description: Cookie de session BFF (HttpOnly). Les requêtes non sûres exigent aussi `X-XSRF-TOKEN`.
+  parameters:
+    Entity:
+      name: entity
+      in: query
+      description: Code du tenant ; à défaut, résolu par le nom d'hôte.
+      schema:
+        type: string
+    CsrfHeader:
+      name: X-XSRF-TOKEN
+      in: header
+      required: true
+      description: Valeur du cookie `XSRF-TOKEN` (double-submit).
+      schema:
+        type: string
+  responses:
+    AuthProblem:
+      description: |
+        Non authentifié. `reason` : `invalid-credentials` (identifiants faux OU compte verrouillé), `unauthenticated`, `session-expired`, `step-up-required` (avec `requiredAcr` et en-tête `WWW-Authenticate: Bearer error="insufficient_user_authentication"`).
+      headers:
+        WWW-Authenticate:
+          description: Présent pour `step-up-required`.
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/AuthProblem'
+          example:
+            type: https://continuum.local/problems/invalid-credentials
+            title: Identifiants invalides
+            status: 401
+            reason: invalid-credentials
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+    CsrfInvalid:
+      description: Jeton CSRF absent ou invalide (reason csrf-invalid) — le front relit le cookie et rejoue une fois.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/AuthProblem'
+          example:
+            type: https://continuum.local/problems/csrf-invalid
+            title: Jeton CSRF invalide
+            status: 403
+            reason: csrf-invalid
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+    RateLimited:
+      description: Trop de tentatives (limite par tenant+identifiant ou par IP ; seuils paramétrés en base).
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/AuthProblem'
+          example:
+            type: https://continuum.local/problems/rate-limited
+            title: Trop de tentatives
+            status: 429
+            reason: rate-limited
+            traceId: 0b3d4c5e8f9a0b1c2d3e4f507a1c2e9f
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ServerError:
+      description: Erreur inattendue — la référence d'erreur (traceId) est affichée à l'utilisateur.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    BadRequest:
+      description: Requête mal formée.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NoContent:
+      description: Opération réussie, sans contenu.
+  schemas:
+    AuthProblem:
+      description: Problème RFC 9457 enrichi pour l'authentification.
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required:
+            - reason
+          properties:
+            reason:
+              type: string
+              enum:
+                - invalid-credentials
+                - unauthenticated
+                - session-expired
+                - step-up-required
+                - csrf-invalid
+                - rate-limited
+            requiredAcr:
+              type: integer
+              description: Niveau d'authentification exigé (`step-up-required`).
+    LoginOptions:
+      type: object
+      required:
+        - mode
+        - ssoProviders
+        - mfaMethods
+      properties:
+        mode:
+          type: string
+          enum:
+            - rest
+            - redirect
+          description: Valeur de `auth.login.mode` pour ce tenant et cette app.
+        ssoProviders:
+          type: array
+          description: Boutons « SSO entreprise » (affichés même en mode `rest`).
+          items:
+            type: object
+            required:
+              - alias
+              - label
+            properties:
+              alias:
+                type: string
+              label:
+                $ref: '#/components/schemas/LocalizedText'
+        mfaMethods:
+          type: array
+          items:
+            type: string
+            enum:
+              - otp
+    SessionState:
+      type: object
+      required:
+        - authenticated
+      properties:
+        authenticated:
+          type: boolean
+        userId:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+        acr:
+          type: integer
+          description: Niveau d'authentification courant.
+        expiresAt:
+          type: string
+          format: date-time
+        idleTimeoutSeconds:
+          type: integer
+          description: Durée d'inactivité avant expiration (session glissante, rafraîchissement transparent côté BFF).
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        entity:
+          type: string
+          description: Code du tenant (issu de `config.json`) ; à défaut, résolu par l'hôte.
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+    MfaRequest:
+      type: object
+      required:
+        - challengeId
+        - code
+      properties:
+        challengeId:
+          type: string
+        code:
+          type: string
+          writeOnly: true
+    LoginResult:
+      description: Union discriminée sur `status`.
+      oneOf:
+        - $ref: '#/components/schemas/LoginAuthenticated'
+        - $ref: '#/components/schemas/LoginMfaRequired'
+        - $ref: '#/components/schemas/LoginActionRequired'
+      discriminator:
+        propertyName: status
+        mapping:
+          AUTHENTICATED: '#/components/schemas/LoginAuthenticated'
+          MFA_REQUIRED: '#/components/schemas/LoginMfaRequired'
+          ACTION_REQUIRED: '#/components/schemas/LoginActionRequired'
+    LoginAuthenticated:
+      type: object
+      required:
+        - status
+        - session
+      properties:
+        status:
+          type: string
+        session:
+          $ref: '#/components/schemas/SessionState'
+    LoginMfaRequired:
+      type: object
+      required:
+        - status
+        - challengeId
+        - methods
+      properties:
+        status:
+          type: string
+        challengeId:
+          type: string
+        methods:
+          type: array
+          items:
+            type: string
+            enum:
+              - otp
+    LoginActionRequired:
+      type: object
+      description: Action requise Keycloak (changement de mot de passe, enrôlement OTP…) — bascule en redirection.
+      required:
+        - status
+        - redirectUrl
+      properties:
+        status:
+          type: string
+        redirectUrl:
+          type: string
+          description: Chemin relatif vers `/authorize`.
+    LocalizedText:
+      type: object
+      description: Texte traduit (fr obligatoire au go-live, D15).
+      required:
+        - fr
+      properties:
+        fr:
+          type: string
+        ar:
+          type: string
+        en:
+          type: string
+      example:
+        fr: Inspection d'agence
+        ar: تفتيش الوكالة
+        en: Branch inspection
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10

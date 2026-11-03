@@ -61,6 +61,18 @@ continuum:
     initial-delay: ${CONTINUUM_DIRECTORY_SYNC_INITIAL_DELAY:PT1M}
     client-id: ${CONTINUUM_DIRECTORY_SYNC_CLIENT_ID:}
     client-secret: ${CONTINUUM_DIRECTORY_SYNC_CLIENT_SECRET:}
+  auth:
+    bff:
+      # BFF d'authentification (ADR 0014) : actif seulement si la cle de chiffrement des refresh tokens est fournie (Vault).
+      encryption-key: ${CONTINUUM_AUTH_BFF_ENCRYPTION_KEY:}
+      cookie-secure: ${CONTINUUM_AUTH_BFF_COOKIE_SECURE:true}
+      apps:
+        app:
+          client-id: ${CONTINUUM_AUTH_BFF_APP_CLIENT_ID:continuum-app-bff}
+          client-secret: ${KC_APP_BFF_SECRET:}
+        admin:
+          client-id: ${CONTINUUM_AUTH_BFF_ADMIN_CLIENT_ID:continuum-admin-bff}
+          client-secret: ${KC_ADMIN_BFF_SECRET:}
   surface: ${CONTINUUM_SURFACE:all}
   db:
     # Dialecte du moteur d'autorisation (D4) : postgresql | oracle.

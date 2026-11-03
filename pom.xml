@@ -212,6 +212,32 @@
             </configuration>
           </execution>
           <execution>
+            <id>generate-auth</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/public/auth.yaml. -->
+              <!-- bundle patch: `const:` on the status discriminators removed (generator emits conflicting enums) -->
+              <inputSpec>src/main/openapi/auth.bundled.yaml</inputSpec>
+              <generatorName>spring</generatorName>
+              <library>spring-boot</library>
+              <apiPackage>gen.auth.api</apiPackage>
+              <modelPackage>gen.auth.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <interfaceOnly>true</interfaceOnly>
+                <useSpringBoot3>true</useSpringBoot3>
+                <useTags>true</useTags>
+                <documentationProvider>none</documentationProvider>
+                <openApiNullable>false</openApiNullable>
+                <useJakartaEe>true</useJakartaEe>
+                <skipDefaultInterface>false</skipDefaultInterface>
+              </configOptions>
+            </configuration>
+          </execution>
+          <execution>
             <id>generate-app-findings</id>
             <goals><goal>generate</goal></goals>
             <configuration>

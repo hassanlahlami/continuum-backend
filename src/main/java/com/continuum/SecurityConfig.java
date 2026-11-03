@@ -1,6 +1,16 @@
 package com.continuum;
 
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.List;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.web.filter.OncePerRequestFilter;
 import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -99,6 +109,46 @@ public class SecurityConfig {
      * <em>client credentials</em> dont l'{@code azp} est le client de service configure
      * ({@code continuum.internal.client-id}). Jeton absent/invalide : 401 ; autre client : 403.
      */
+    /** Double-submit CSRF cookie (XSRF-TOKEN, readable by the SPA) for the BFF auth endpoints (ADR 0014). */
+    @Bean
+    CookieCsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repo = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repo.setCookiePath("/");
+        return repo;
+    }
+
+    /**
+     * BFF auth endpoints {@code /api/auth/**} (contrat {@code public/auth.yaml}) : accessibles sans jeton
+     * (la session est portée par le cookie {@code CT_SESSION}, vérifiée par le contrôleur), protégés par
+     * CSRF double-submit ({@code csrf.spa()}), même origine donc sans CORS.
+     */
+    @Bean
+    @Order(-1)
+    SecurityFilterChain authBff(HttpSecurity http, CookieCsrfTokenRepository csrfRepo,
+            ProblemSecurityHandler problem) throws Exception {
+        http
+                .securityMatcher("/api/auth/**")
+                .csrf(csrf -> csrf.csrfTokenRepository(csrfRepo)
+                        .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+                .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .exceptionHandling(e -> e.accessDeniedHandler(problem));
+        return http.build();
+    }
+
+    /** Force la génération du cookie XSRF-TOKEN (jeton différé en mode SPA) sur chaque requête. */
+    static final class CsrfCookieFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+                FilterChain chain) throws ServletException, IOException {
+            CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+            if (token != null) {
+                token.getToken();
+            }
+            chain.doFilter(request, response);
+        }
+    }
+
     @Bean
     @Order(0)
     SecurityFilterChain internalApi(HttpSecurity http, ProblemSecurityHandler problem,
