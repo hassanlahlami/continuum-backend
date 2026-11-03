@@ -15,7 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 public class AuthBffStore {
 
-    public record SessionRow(String idHash, UUID tenantId, UUID userId, byte[] refreshTokenEnc, String acr,
+    public record SessionRow(String idHash, String app, UUID tenantId, UUID userId, byte[] refreshTokenEnc, String acr,
             OffsetDateTime expiresAt, OffsetDateTime idleExpiresAt) {
     }
 
@@ -59,17 +59,17 @@ public class AuthBffStore {
     // ----- sessions
 
     public void createSession(SessionRow s) {
-        jdbc.update("INSERT INTO platform.auth_session (id_hash, tenant_id, user_id, refresh_token_enc, acr,"
-                + " expires_at, idle_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                s.idHash(), bind(s.tenantId()), bind(s.userId()), s.refreshTokenEnc(), s.acr(),
+        jdbc.update("INSERT INTO platform.auth_session (id_hash, app, tenant_id, user_id, refresh_token_enc,"
+                + " acr, expires_at, idle_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                s.idHash(), s.app(), bind(s.tenantId()), bind(s.userId()), s.refreshTokenEnc(), s.acr(),
                 s.expiresAt(), s.idleExpiresAt());
     }
 
     public Optional<SessionRow> findLiveSession(String idHash, OffsetDateTime now) {
-        return jdbc.query("SELECT id_hash, tenant_id, user_id, refresh_token_enc, acr, expires_at, idle_expires_at"
+        return jdbc.query("SELECT id_hash, app, tenant_id, user_id, refresh_token_enc, acr, expires_at, idle_expires_at"
                 + " FROM platform.auth_session WHERE id_hash = ? AND revoked_at IS NULL"
                 + " AND expires_at > ? AND idle_expires_at > ?",
-                (rs, i) -> new SessionRow(rs.getString("id_hash"), uuid(rs, "tenant_id"), uuid(rs, "user_id"),
+                (rs, i) -> new SessionRow(rs.getString("id_hash"), rs.getString("app"), uuid(rs, "tenant_id"), uuid(rs, "user_id"),
                         rs.getBytes("refresh_token_enc"), rs.getString("acr"),
                         rs.getObject("expires_at", OffsetDateTime.class),
                         rs.getObject("idle_expires_at", OffsetDateTime.class)),
@@ -84,6 +84,12 @@ public class AuthBffStore {
     public void updateRefreshToken(String idHash, byte[] refreshTokenEnc) {
         jdbc.update("UPDATE platform.auth_session SET refresh_token_enc = ? WHERE id_hash = ? AND revoked_at IS NULL",
                 refreshTokenEnc, idHash);
+    }
+
+    /** Step-up: the existing session takes the new level and the refresh token of the upgraded SSO session. */
+    public void updateStepUp(String idHash, byte[] refreshTokenEnc, String acr) {
+        jdbc.update("UPDATE platform.auth_session SET refresh_token_enc = ?, acr = ? WHERE id_hash = ?"
+                + " AND revoked_at IS NULL", refreshTokenEnc, acr, idHash);
     }
 
     public void revoke(String idHash, OffsetDateTime now) {

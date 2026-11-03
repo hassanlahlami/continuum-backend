@@ -1,6 +1,7 @@
 package com.continuum.iam.web;
 
 import com.continuum.ErrorReference;
+import com.continuum.SecurityConfig;
 import com.continuum.iam.internal.bff.AuthBffConfig;
 import com.continuum.iam.internal.bff.AuthBffProperties;
 import com.continuum.iam.internal.bff.AuthBffService;
@@ -11,7 +12,9 @@ import gen.auth.api.OptionsApi;
 import gen.auth.api.RedirectApi;
 import gen.auth.api.SessionApi;
 import gen.auth.model.AuthApp;
+import gen.auth.model.LoginActionRequired;
 import gen.auth.model.LoginAuthenticated;
+import gen.auth.model.LoginMfaRequired;
 import gen.auth.model.LoginOptions;
 import gen.auth.model.LoginRequest;
 import gen.auth.model.LoginResult;
@@ -38,7 +41,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * BFF d'authentification (D41, ADR 0014, contrat {@code public/auth.yaml}) : le navigateur ne reçoit qu'un
  * cookie de session {@code HttpOnly}; les jetons Keycloak restent côté serveur. Tranche livrée : options,
- * session, login, logout. {@code /mfa}, {@code /authorize}, {@code /step-up} répondent 501 (suite).
+ * session, login, MFA, logout, redirection Code + PKCE terminée par le BFF ({@code /authorize}, {@code /callback}) et
+ * step-up.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -62,6 +66,8 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
             this.retryAfter = retryAfter;
         }
     }
+
+    static final String FLOW_COOKIE = "CT_AUTH_STATE";
 
     private final AuthBffService service;
     private final AuthBffProperties props;
@@ -116,6 +122,11 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
         }
         LoginOutcome outcome = service.login(app, tenant, body.getUsername(), body.getPassword(),
                 request.getRemoteAddr());
+        return result(outcome, app);
+    }
+
+    /** Maps a login/MFA outcome to the {@code LoginResult} union (or the problem for a failure). */
+    private ResponseEntity<LoginResult> result(LoginOutcome outcome, String app) {
         if (outcome instanceof LoginOutcome.RateLimited r) {
             throw new AuthProblemException(HttpStatus.TOO_MANY_REQUESTS, "rate-limited", "Trop de tentatives",
                     r.retryAfterSeconds());
@@ -127,12 +138,28 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
             return ResponseEntity.ok(new LoginAuthenticated("AUTHENTICATED",
                     state(s.opened().view())));
         }
+        if (outcome instanceof LoginOutcome.MfaRequired m) {
+            return ResponseEntity.ok(new LoginMfaRequired("MFA_REQUIRED", m.challengeId(),
+                    List.of(LoginMfaRequired.MethodsEnum.OTP)));
+        }
+        if (outcome instanceof LoginOutcome.ActionRequired) {
+            return ResponseEntity.ok(new LoginActionRequired("ACTION_REQUIRED",
+                    "/api/auth/authorize?app=" + app + "&returnTo=/"));
+        }
+        if (outcome instanceof LoginOutcome.ChallengeExpired) {
+            throw new AuthProblemException(HttpStatus.UNAUTHORIZED, "session-expired", "Défi expiré", null);
+        }
         throw invalidCredentials();
     }
 
     @Override
     public ResponseEntity<LoginResult> verifyMfa(String xsrf, MfaRequest body) {
-        throw new AuthProblemException(HttpStatus.NOT_IMPLEMENTED, "not-implemented", "Non implémenté", null);
+        String app = service.challengeApp(body.getChallengeId()).orElse(null);
+        if (app == null) {
+            throw new AuthProblemException(HttpStatus.UNAUTHORIZED, "session-expired", "Défi expiré", null);
+        }
+        served(AuthApp.fromValue(app));
+        return result(service.verifyMfa(body.getChallengeId(), body.getCode(), request.getRemoteAddr()), app);
     }
 
     @Override
@@ -149,15 +176,81 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
     }
 
     @Override
-    public ResponseEntity<Void> startRedirectLogin(String entity, AuthApp app, String returnTo, String idp) {
-        served(app);
-        throw new AuthProblemException(HttpStatus.NOT_IMPLEMENTED, "not-implemented", "Non implémenté", null);
+    public ResponseEntity<Void> startRedirectLogin(String entity, AuthApp authApp, String returnTo, String idp) {
+        String app = served(authApp);
+        UUID tenant = service.tenant(entity).orElse(null);
+        if (tenant == null) {
+            throw new AuthProblemException(HttpStatus.BAD_REQUEST, "bad-request", "Entité inconnue", null);
+        }
+        // admin: the session is born at the level /api/admin/** requires (§4.3.3)
+        Integer acr = "admin".equals(app) ? SecurityConfig.ADMIN_MIN_ACR : null;
+        try {
+            return redirect(service.startAuthorization(app, tenant, returnTo, idp, acr, callbackUri()));
+        } catch (AuthBffService.BadFlowException e) {
+            throw badRequest(e);
+        }
     }
 
     @Override
-    public ResponseEntity<Void> startStepUp(Integer acr, AuthApp app, String returnTo) {
-        served(app);
-        throw new AuthProblemException(HttpStatus.NOT_IMPLEMENTED, "not-implemented", "Non implémenté", null);
+    public ResponseEntity<Void> startStepUp(Integer acr, AuthApp authApp, String returnTo) {
+        String app = served(authApp);
+        try {
+            return redirect(service.startStepUp(app, cookieValue(app), acr, returnTo, callbackUri())
+                    .orElseThrow(() -> new AuthProblemException(HttpStatus.UNAUTHORIZED, "unauthenticated",
+                            "Authentification requise", null)));
+        } catch (AuthBffService.BadFlowException e) {
+            throw badRequest(e);
+        }
+    }
+
+    @Override
+    public ResponseEntity<Void> completeRedirectLogin(String code, String state) {
+        try {
+            AuthBffService.Completed done = service.complete(code, state, flowNonce(), callbackUri());
+            if (done.cookieValue() != null) {
+                setSessionCookie(done.app(), done.cookieValue(), false);
+                csrf.saveToken(csrf.generateToken(request), request, response);
+            }
+            response.addHeader(HttpHeaders.SET_COOKIE, flowCookie("", 0).toString());
+            return ResponseEntity.status(HttpStatus.FOUND).header(HttpHeaders.LOCATION, done.returnTo()).build();
+        } catch (AuthBffService.BadFlowException e) {
+            throw badRequest(e);
+        }
+    }
+
+    private ResponseEntity<Void> redirect(AuthBffService.Redirect r) {
+        // short-lived cookie binding the flow to this browser (login-CSRF protection of the callback)
+        return ResponseEntity.status(HttpStatus.FOUND).header(HttpHeaders.LOCATION, r.location())
+                .header(HttpHeaders.SET_COOKIE, flowCookie(r.nonce(), 600).toString()).build();
+    }
+
+    /** Lax, not Strict: Keycloak sends the browser back with a cross-site top-level navigation. */
+    private ResponseCookie flowCookie(String value, long maxAge) {
+        return ResponseCookie.from(FLOW_COOKIE, value).httpOnly(true).secure(props.cookieSecure()).sameSite("Lax")
+                .path("/api/auth").maxAge(maxAge).build();
+    }
+
+    private String flowNonce() {
+        if (request.getCookies() != null) {
+            for (Cookie c : request.getCookies()) {
+                if (FLOW_COOKIE.equals(c.getName())) {
+                    return c.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    private String callbackUri() {
+        if (props.callbackUri() != null && !props.callbackUri().isBlank()) {
+            return props.callbackUri();
+        }
+        return org.springframework.web.servlet.support.ServletUriComponentsBuilder.fromContextPath(request)
+                .path("/api/auth/callback").build().toUriString();
+    }
+
+    private static AuthProblemException badRequest(AuthBffService.BadFlowException e) {
+        return new AuthProblemException(HttpStatus.BAD_REQUEST, "bad-request", "Requête invalide", null);
     }
 
     @ExceptionHandler(AuthProblemException.class)
@@ -188,7 +281,7 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
     }
 
     private Optional<SessionView> currentSession(String app) {
-        return service.current(cookieValue(app));
+        return service.current(app, cookieValue(app));
     }
 
     private String cookieValue(String app) {

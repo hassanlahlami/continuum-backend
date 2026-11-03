@@ -66,6 +66,10 @@ continuum:
       # BFF d'authentification (ADR 0014) : actif seulement si la cle de chiffrement des refresh tokens est fournie (Vault).
       encryption-key: ${CONTINUUM_AUTH_BFF_ENCRYPTION_KEY:}
       cookie-secure: ${CONTINUUM_AUTH_BFF_COOKIE_SECURE:true}
+      # Redirection (Code + PKCE termine par le BFF) : endpoint d'autorisation visible du navigateur et URL du callback
+      # (vides = derives de l'issuer et de la requete).
+      auth-uri: ${CONTINUUM_AUTH_BFF_AUTH_URI:}
+      callback-uri: ${CONTINUUM_AUTH_BFF_CALLBACK_URI:}
       apps:
         app:
           client-id: ${CONTINUUM_AUTH_BFF_APP_CLIENT_ID:continuum-app-bff}

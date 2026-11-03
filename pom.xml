@@ -216,7 +216,7 @@
             <goals><goal>generate</goal></goals>
             <configuration>
               <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/public/auth.yaml. -->
-              <!-- bundle patch: `const:` on the status discriminators removed (generator emits conflicting enums) -->
+              <!-- bundle patch: `enum: [X]` on the status discriminators removed (generator emits a per-class StatusEnum that conflicts with LoginResult.getStatus(): String) -->
               <inputSpec>src/main/openapi/auth.bundled.yaml</inputSpec>
               <generatorName>spring</generatorName>
               <library>spring-boot</library>

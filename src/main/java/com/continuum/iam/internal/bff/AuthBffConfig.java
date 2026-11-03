@@ -29,9 +29,10 @@ public class AuthBffConfig {
         String oidc = issuer.replaceAll("/+$", "") + "/protocol/openid-connect";
         String tokenUri = notBlank(props.tokenUri()) ? props.tokenUri() : oidc + "/token";
         String logoutUri = notBlank(props.logoutUri()) ? props.logoutUri() : oidc + "/logout";
+        String authUri = notBlank(props.authUri()) ? props.authUri() : oidc + "/auth";
         return new AuthBffService(
                 new AuthBffStore(platform.dataSource(), "oracle".equalsIgnoreCase(dialect)),
-                new KeycloakTokenClient(rest, mapper, tokenUri, logoutUri),
+                new KeycloakTokenClient(rest, mapper, tokenUri, logoutUri, authUri),
                 new RefreshTokenCipher(props.encryptionKey()), props, Clock.systemUTC());
     }
 
