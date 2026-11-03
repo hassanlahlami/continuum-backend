@@ -21,4 +21,10 @@ public record AuthBffProperties(String tokenUri, String logoutUri, boolean cooki
     }
 
     public static final String SESSION_COOKIE = "CT_SESSION";
+    public static final String ADMIN_SESSION_COOKIE = "CT_ADMIN_SESSION";
+
+    /** Session cookie of a front: one cookie per front (ADR 0014 addendum b). */
+    public static String cookieName(String app) {
+        return "admin".equals(app) ? ADMIN_SESSION_COOKIE : SESSION_COOKIE;
+    }
 }

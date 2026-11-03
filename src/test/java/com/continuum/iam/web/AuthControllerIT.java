@@ -3,6 +3,7 @@ package com.continuum.iam.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -134,13 +135,16 @@ class AuthControllerIT {
         r.add("continuum.auth.bff.cookie-secure", () -> "true");
         r.add("continuum.auth.bff.apps.app.client-id", () -> "continuum-app-bff");
         r.add("continuum.auth.bff.apps.app.client-secret", () -> "s3cret");
+        r.add("continuum.auth.bff.apps.admin.client-id", () -> "continuum-admin-bff");
+        r.add("continuum.auth.bff.apps.admin.client-secret", () -> "s3cret");
     }
 
     @TestConfiguration
     static class Cfg {
         @Bean
         JwtDecoder jwtDecoder() {
-            return token -> Jwt.withTokenValue(token).header("alg", "none").claim("sub", "t").build();
+            return token -> Jwt.withTokenValue(token).header("alg", "none").claim("sub", "t").claim("acr", "1")
+                    .claim("aud", java.util.List.of("continuum-app", "continuum-admin")).build();
         }
     }
 
@@ -214,8 +218,38 @@ class AuthControllerIT {
         mvc.perform(get("/api/nothing-here").cookie(session)).andExpect(status().isUnauthorized());
     }
 
+
     @Test
     @Order(4)
+    void adminFrontUsesItsOwnCookieAndStepUpIsRequired() throws Exception {
+        String t = csrf();
+        MvcResult ok = mvc.perform(post("/api/auth/login").contentType("application/json")
+                .cookie(new Cookie("XSRF-TOKEN", t)).header("X-XSRF-TOKEN", t)
+                .content("{\"app\":\"admin\",\"entity\":\"DEMO\",\"username\":\"alice\",\"password\":\"good\"}"))
+                .andReturn();
+        assertThat(ok.getResponse().getStatus()).isEqualTo(200);
+        assertThat(ok.getResponse().getCookie("CT_SESSION")).isNull();
+        String setCookie = ok.getResponse().getHeaders("Set-Cookie").stream()
+                .filter(h -> h.startsWith("CT_ADMIN_SESSION=")).findFirst().orElseThrow();
+        assertThat(setCookie).contains("Path=/api").contains("HttpOnly").contains("SameSite=Strict");
+        Cookie admin = ok.getResponse().getCookie("CT_ADMIN_SESSION");
+
+        mvc.perform(get("/api/auth/session").param("app", "admin").cookie(admin))
+                .andExpect(jsonPath("$.authenticated").value(true));
+        // the app front does not read the admin cookie
+        mvc.perform(get("/api/auth/session").cookie(admin)).andExpect(jsonPath("$.authenticated").value(false));
+
+        // admin session at acr 1 on /api/admin/** -> 401 step-up-required, not 403
+        mvc.perform(get("/api/admin/nothing-here").cookie(admin)).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.reason").value("step-up-required"))
+                .andExpect(jsonPath("$.requiredAcr").value(2))
+                .andExpect(header().string("WWW-Authenticate", org.hamcrest.Matchers.containsString("insufficient_user_authentication")));
+        // /api/admin/** ignores CT_SESSION
+        mvc.perform(get("/api/admin/nothing-here").cookie(new Cookie("CT_SESSION", admin.getValue())))
+                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.reason").doesNotExist());
+    }
+    @Test
+    @Order(5)
     void wrongCredentialsThenRateLimitFromDatabaseParams() throws Exception {
         new JdbcTemplate(dataSource).update("INSERT INTO platform.tenant_param (tenant_id, param_key, param_value)"
                 + " VALUES (?::uuid, 'auth.ratelimit.identifier.max_attempts', '2')", TENANT);

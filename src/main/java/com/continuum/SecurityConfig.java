@@ -204,6 +204,10 @@ public class SecurityConfig {
         };
     }
 
+    static int acrOf(Jwt jwt) {
+        return acr(jwt);
+    }
+
     private static int acr(Jwt jwt) {
         String value = jwt.getClaimAsString("acr");
         if (value == null || value.isBlank()) {

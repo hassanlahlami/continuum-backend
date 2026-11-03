@@ -35,14 +35,25 @@ public class AuthBffConfig {
                 new RefreshTokenCipher(props.encryptionKey()), props, Clock.systemUTC());
     }
 
+    /** Query parameters carry the wire value ({@code app}/{@code admin}), not the Java constant name. */
+    @Bean
+    org.springframework.core.convert.converter.Converter<String, gen.auth.model.AuthApp> authAppConverter() {
+        return new org.springframework.core.convert.converter.Converter<>() {
+            @Override
+            public gen.auth.model.AuthApp convert(String source) {
+                return gen.auth.model.AuthApp.fromValue(source);
+            }
+        };
+    }
+
     private static boolean notBlank(String s) {
         return s != null && !s.isBlank();
     }
 
     /**
      * Cookie-to-bearer bridge for the resource server: an explicit {@code Authorization: Bearer} header wins
-     * (service callers, tests); otherwise the {@code CT_SESSION} cookie is exchanged server-side for the session's
-     * access token (sessions are opened with the {@code app} client; admin-grade {@code acr}/audience still need step-up, ADR 0014).
+     * (service callers, tests); otherwise the session cookie of the front owning the path ({@code CT_ADMIN_SESSION} on {@code /api/admin/**}, else {@code CT_SESSION}) is exchanged server-side for the session's
+     * access token (ADR 0014 addendum b).
      */
     @Bean
     org.springframework.security.oauth2.server.resource.web.BearerTokenResolver sessionCookieBearerTokenResolver(
@@ -53,10 +64,12 @@ public class AuthBffConfig {
             if (bearer != null || request.getCookies() == null) {
                 return bearer;
             }
+            // /api/admin/** reads only CT_ADMIN_SESSION, everything else only CT_SESSION (ADR 0014 addendum b)
+            String app = request.getRequestURI().startsWith(request.getContextPath() + "/api/admin/") ? "admin" : "app";
+            String name = AuthBffProperties.cookieName(app);
             for (jakarta.servlet.http.Cookie c : request.getCookies()) {
-                if (AuthBffProperties.SESSION_COOKIE.equals(c.getName())) {
-                    // POST /api/auth/login always opens the session with the "app" client (AuthController.APP)
-                    return service.accessToken("app", c.getValue()).orElse(null);
+                if (name.equals(c.getName())) {
+                    return service.accessToken(app, c.getValue()).orElse(null);
                 }
             }
             return null;
