@@ -10,6 +10,7 @@ import gen.auth.api.LoginApi;
 import gen.auth.api.OptionsApi;
 import gen.auth.api.RedirectApi;
 import gen.auth.api.SessionApi;
+import gen.auth.model.AuthApp;
 import gen.auth.model.LoginAuthenticated;
 import gen.auth.model.LoginOptions;
 import gen.auth.model.LoginRequest;
@@ -44,7 +45,7 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnExpression(AuthBffConfig.ENABLED)
 public class AuthController implements OptionsApi, SessionApi, LoginApi, RedirectApi {
 
-    private static final String APP = "app";
+
 
     /** Problème d'authentification (reason du contrat). */
     static final class AuthProblemException extends RuntimeException {
@@ -67,9 +68,12 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
     private final CsrfTokenRepository csrf;
     private final HttpServletRequest request;
     private final HttpServletResponse response;
+    private final String surface;
 
     public AuthController(AuthBffService service, AuthBffProperties props, CsrfTokenRepository csrf,
-            HttpServletRequest request, HttpServletResponse response) {
+            HttpServletRequest request, HttpServletResponse response,
+            @org.springframework.beans.factory.annotation.Value("${continuum.surface:all}") String surface) {
+        this.surface = surface;
         this.service = service;
         this.props = props;
         this.csrf = csrf;
@@ -83,7 +87,8 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
     }
 
     @Override
-    public ResponseEntity<LoginOptions> getLoginOptions(String app, String entity) {
+    public ResponseEntity<LoginOptions> getLoginOptions(AuthApp authApp, String entity) {
+        String app = served(authApp);
         UUID tenant = service.tenant(entity).orElse(null);
         if (tenant == null) {
             throw new AuthProblemException(HttpStatus.NOT_FOUND, "unknown-entity", "Entité inconnue", null);
@@ -94,28 +99,29 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
     }
 
     @Override
-    public ResponseEntity<SessionState> getSession() {
+    public ResponseEntity<SessionState> getSession(AuthApp authApp) {
         // le cookie XSRF-TOKEN est posé par le filtre CSRF de la chaîne /api/auth/**
-        return ResponseEntity.ok(currentSession().map(AuthController::state)
+        return ResponseEntity.ok(currentSession(served(authApp)).map(AuthController::state)
                 .orElseGet(() -> new SessionState(false)));
     }
 
     @Override
     public ResponseEntity<LoginResult> login(String xsrf, LoginRequest body) {
+        String app = served(body.getApp());
         String entity = body.getEntity() != null ? body.getEntity() : request.getParameter("entity");
         UUID tenant = service.tenant(entity).orElse(null);
         if (tenant == null) {
             // même réponse que des identifiants faux : pas d'énumération des entités
             throw invalidCredentials();
         }
-        LoginOutcome outcome = service.login(APP, tenant, body.getUsername(), body.getPassword(),
+        LoginOutcome outcome = service.login(app, tenant, body.getUsername(), body.getPassword(),
                 request.getRemoteAddr());
         if (outcome instanceof LoginOutcome.RateLimited r) {
             throw new AuthProblemException(HttpStatus.TOO_MANY_REQUESTS, "rate-limited", "Trop de tentatives",
                     r.retryAfterSeconds());
         }
         if (outcome instanceof LoginOutcome.Success s) {
-            setSessionCookie(s.opened().cookieValue(), false);
+            setSessionCookie(app, s.opened().cookieValue(), false);
             // CSRF renouvelé après login
             csrf.saveToken(csrf.generateToken(request), request, response);
             return ResponseEntity.ok(new LoginAuthenticated("AUTHENTICATED",
@@ -130,24 +136,27 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
     }
 
     @Override
-    public ResponseEntity<Void> logout(String xsrf) {
-        String cookie = cookieValue();
-        if (currentSession().isEmpty()) {
+    public ResponseEntity<Void> logout(String xsrf, AuthApp authApp) {
+        String app = served(authApp);
+        String cookie = cookieValue(app);
+        if (currentSession(app).isEmpty()) {
             throw new AuthProblemException(HttpStatus.UNAUTHORIZED, "unauthenticated", "Authentification requise",
                     null);
         }
-        service.logout(APP, cookie);
-        setSessionCookie("", true);
+        service.logout(app, cookie);
+        setSessionCookie(app, "", true);
         return ResponseEntity.noContent().build();
     }
 
     @Override
-    public ResponseEntity<Void> startRedirectLogin(String entity, String returnTo, String idp) {
+    public ResponseEntity<Void> startRedirectLogin(String entity, AuthApp app, String returnTo, String idp) {
+        served(app);
         throw new AuthProblemException(HttpStatus.NOT_IMPLEMENTED, "not-implemented", "Non implémenté", null);
     }
 
     @Override
-    public ResponseEntity<Void> startStepUp(Integer acr, String returnTo) {
+    public ResponseEntity<Void> startStepUp(Integer acr, AuthApp app, String returnTo) {
+        served(app);
         throw new AuthProblemException(HttpStatus.NOT_IMPLEMENTED, "not-implemented", "Non implémenté", null);
     }
 
@@ -169,14 +178,24 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
         return new AuthProblemException(HttpStatus.UNAUTHORIZED, "invalid-credentials", "Identifiants invalides", null);
     }
 
-    private Optional<SessionView> currentSession() {
-        return service.current(cookieValue());
+    /** Front effectif (défaut app) ; 400 s'il n'est pas servi par {@code continuum.surface} (ADR 0014 avenant b). */
+    private String served(AuthApp authApp) {
+        String app = authApp == null ? AuthApp.APP.getValue() : authApp.getValue();
+        if (!"all".equals(surface) && !surface.equals(app)) {
+            throw new AuthProblemException(HttpStatus.BAD_REQUEST, "unsupported-app", "Front non servi", null);
+        }
+        return app;
     }
 
-    private String cookieValue() {
+    private Optional<SessionView> currentSession(String app) {
+        return service.current(cookieValue(app));
+    }
+
+    private String cookieValue(String app) {
         if (request.getCookies() != null) {
+            String name = AuthBffProperties.cookieName(app);
             for (Cookie c : request.getCookies()) {
-                if (AuthBffProperties.SESSION_COOKIE.equals(c.getName())) {
+                if (name.equals(c.getName())) {
                     return c.getValue();
                 }
             }
@@ -184,9 +203,9 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
         return null;
     }
 
-    private void setSessionCookie(String value, boolean expire) {
-        ResponseCookie cookie = ResponseCookie.from(AuthBffProperties.SESSION_COOKIE, value)
-                .httpOnly(true).secure(props.cookieSecure()).sameSite("Strict").path("/")
+    private void setSessionCookie(String app, String value, boolean expire) {
+        ResponseCookie cookie = ResponseCookie.from(AuthBffProperties.cookieName(app), value)
+                .httpOnly(true).secure(props.cookieSecure()).sameSite("Strict").path("/api")
                 .maxAge(expire ? 0 : -1).build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }

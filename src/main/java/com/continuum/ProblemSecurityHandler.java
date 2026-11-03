@@ -8,7 +8,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
@@ -40,7 +43,43 @@ public class ProblemSecurityHandler implements AuthenticationEntryPoint, AccessD
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
             AccessDeniedException accessDeniedException) throws IOException {
+        if (insufficientAcr(request)) {
+            // admin session cookie opened by /login (acr 1): step-up, not a refusal (ADR 0014 addendum b)
+            response.setHeader("WWW-Authenticate", "Bearer error=\"insufficient_user_authentication\"");
+            ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNAUTHORIZED);
+            pd.setTitle("Authentification renforcée requise");
+            pd.setProperty("reason", "step-up-required");
+            pd.setProperty("requiredAcr", SecurityConfig.ADMIN_MIN_ACR);
+            pd.setProperty("traceId", ErrorReference.traceId());
+            response.setStatus(HttpStatus.UNAUTHORIZED.value());
+            response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+            mapper.writeValue(response.getOutputStream(), pd);
+            return;
+        }
         write(response, HttpStatus.FORBIDDEN, "Accès refusé");
+    }
+
+    /** Admin API reached through the admin session cookie (no Authorization header), admin audience, acr too low. */
+    private static boolean insufficientAcr(HttpServletRequest request) {
+        if (!request.getRequestURI().startsWith(request.getContextPath() + "/api/admin/")
+                || request.getHeader("Authorization") != null || !hasCookie(request, com.continuum.iam.internal.bff.AuthBffProperties.ADMIN_SESSION_COOKIE)) {
+            return false;
+        }
+        Authentication a = SecurityContextHolder.getContext().getAuthentication();
+        return a != null && a.getPrincipal() instanceof Jwt jwt && jwt.getAudience() != null
+                && jwt.getAudience().contains(SecurityConfig.AUDIENCE_ADMIN)
+                && SecurityConfig.acrOf(jwt) < SecurityConfig.ADMIN_MIN_ACR;
+    }
+
+    private static boolean hasCookie(HttpServletRequest request, String name) {
+        if (request.getCookies() != null) {
+            for (jakarta.servlet.http.Cookie c : request.getCookies()) {
+                if (name.equals(c.getName())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void write(HttpServletResponse response, HttpStatus status, String title) throws IOException {

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Continuum — API d'authentification (BFF)
-  version: 0.1.0
+  version: 0.2.0
   x-status: draft
   description: |
     Login « REST » via Keycloak (D41, ADR 0014). Le backend (BFF) appelle Keycloak ; les jetons restent côté serveur, le navigateur ne reçoit qu'un cookie de session `HttpOnly; Secure; SameSite=Strict`. SPA et `/api` sont servis sous la **même origine** (reverse proxy) ; un `apiBaseUrl` absolu n'est pas supporté. CSRF double-submit : cookie `XSRF-TOKEN` (lisible par le JS) + en-tête `X-XSRF-TOKEN` sur toute requête non sûre (Spring `csrf.spa()`). Le cookie est posé par `GET /session` (anonyme) ; session et jeton CSRF sont renouvelés après login. Le tenant est résolu par le nom d'hôte, ou le paramètre `entity` (corps ou requête). Le mode `redirect` est **également terminé par le BFF** (Code + PKCE confidentiel côté serveur) : le front n'a qu'un modèle, le cookie ; plus de Bearer dans le navigateur.
@@ -21,7 +21,7 @@ paths:
       operationId: getLoginOptions
       summary: Options de connexion du tenant, lues avant l'amorçage (anonyme)
       description: |
-        `mode` provient du paramètre en base `auth.login.mode` (par tenant ; défaut `redirect` pour l'app `admin`, qui n'est jamais proposée en `rest` tant que le spike `acr` ≥ 2 est négatif — voir ADR 0014 §4).
+        `mode` provient du paramètre en base `auth.login.mode` (par tenant ; défaut `redirect` pour l'app `admin`, qui n'est jamais proposée en `rest` : le spike `acr` ≥ 2 est négatif (2026-11-02, ADR 0014 avenant).
       x-required-feature: public
       parameters:
         - $ref: '#/components/parameters/Entity'
@@ -29,10 +29,7 @@ paths:
           in: query
           required: true
           schema:
-            type: string
-            enum:
-              - app
-              - admin
+            $ref: '#/components/schemas/AuthApp'
       responses:
         '200':
           description: Options de connexion.
@@ -49,9 +46,11 @@ paths:
       operationId: getSession
       summary: État de la session courante (anonyme autorisé ; pose le cookie CSRF)
       description: |
-        Toujours 200, même sans session (`authenticated: false`), pour ne pas déclencher la redirection du front. Ne renvoie jamais de jeton.
+        Toujours 200, même sans session (`authenticated: false`), pour ne pas déclencher la redirection du front. Ne renvoie jamais de jeton. Lit le cookie de session du front désigné par `app` (`CT_SESSION` ou `CT_ADMIN_SESSION`).
       x-required-feature: public
       security: []
+      parameters:
+        - $ref: '#/components/parameters/App'
       responses:
         '200':
           description: État de session.
@@ -85,7 +84,7 @@ paths:
       operationId: login
       summary: Connexion par identifiant et mot de passe (direct grant côté serveur)
       description: |
-        Identifiants faux et compte verrouillé donnent la **même** réponse 401 (`reason: invalid-credentials`), sans énumération. Seule la limitation de débit (par tenant+identifiant et par IP) répond 429 avec `Retry-After`. Le corps de la requête n'est jamais journalisé ni republié par le front. Les conditions LoA ne sont pas évaluées dans un flux direct grant : ce flux ne délivre que `acr` = 1.
+        Identifiants faux et compte verrouillé donnent la **même** réponse 401 (`reason: invalid-credentials`), sans énumération. Seule la limitation de débit (par tenant+identifiant et par IP) répond 429 avec `Retry-After`. Le corps de la requête n'est jamais journalisé ni republié par le front. Les conditions LoA ne sont pas évaluées dans un flux direct grant : ce flux ne délivre que `acr` = 1. `app` (corps) choisit le client Keycloak confidentiel du BFF (`continuum-app-bff` | `continuum-admin-bff`) et le cookie posé ; une valeur non exposée par le profil de l'instance (`continuum.surface`, §4.3.2) donne 400. Une session `admin` ouverte ainsi reste à `acr` = 1 : tout appel `/api/admin/**` répond 401 `step-up-required` (`requiredAcr: 2`) jusqu'au passage par `/step-up`.
       x-required-feature: public
       parameters:
         - $ref: '#/components/parameters/CsrfHeader'
@@ -100,7 +99,7 @@ paths:
           description: Résultat de la tentative (union discriminée sur `status`).
           headers:
             Set-Cookie:
-              description: Cookie de session `HttpOnly; Secure; SameSite=Strict` (si `AUTHENTICATED`) et nouveau `XSRF-TOKEN`.
+              description: Cookie de session `HttpOnly; Secure; SameSite=Strict` du front `app` (`CT_SESSION` ou `CT_ADMIN_SESSION`, si `AUTHENTICATED`) et nouveau `XSRF-TOKEN`.
               schema:
                 type: string
           content:
@@ -140,6 +139,7 @@ paths:
         - login
       operationId: verifyMfa
       summary: Réponse au défi OTP d'une connexion en cours
+      description: Le front (`app`) est celui mémorisé avec le défi `challengeId` au `/login` ; pas de paramètre.
       x-required-feature: public
       parameters:
         - $ref: '#/components/parameters/CsrfHeader'
@@ -176,7 +176,9 @@ paths:
       x-required-feature: authenticated
       security:
         - sessionCookie: []
+        - adminSessionCookie: []
       parameters:
+        - $ref: '#/components/parameters/App'
         - $ref: '#/components/parameters/CsrfHeader'
       responses:
         '204':
@@ -190,10 +192,11 @@ paths:
       operationId: startRedirectLogin
       summary: Démarre le Code + PKCE terminé par le BFF (SSO entreprise, WebAuthn, repli)
       description: |
-        Navigation (pas XHR). Redirige vers Keycloak ; le callback backend pose le même cookie de session que `/login`, puis redirige vers `returnTo`. `returnTo` doit être une route interne (relative) ; sinon 400.
+        Navigation (pas XHR). Redirige vers Keycloak ; le callback backend pose le même cookie de session que `/login`, puis redirige vers `returnTo`. `returnTo` doit être une route interne (relative) ; sinon 400. Pour `app=admin`, la demande porte `acr_values` du niveau exigé par `/api/admin/**` (§4.3.3) : la session naît directement au bon niveau.
       x-required-feature: public
       parameters:
         - $ref: '#/components/parameters/Entity'
+        - $ref: '#/components/parameters/App'
         - name: returnTo
           in: query
           schema:
@@ -209,6 +212,31 @@ paths:
           description: Redirection vers Keycloak.
         '400':
           $ref: '#/components/responses/BadRequest'
+  /callback:
+    get:
+      tags:
+        - redirect
+      operationId: completeRedirectLogin
+      summary: Cible de redirection OIDC côté serveur (Code + PKCE terminé par le BFF)
+      description: |
+        Navigation, appelée par Keycloak (pas par le front). Échange `code`/`state`, pose le cookie de session puis redirige vers le `returnTo` mémorisé au démarrage. `state` invalide ou expiré : 400.
+      x-required-feature: public
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirection vers `returnTo`, cookie de session posé.
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /step-up:
     get:
       tags:
@@ -216,11 +244,13 @@ paths:
       operationId: startStepUp
       summary: Réauthentification à un niveau `acr` supérieur (signatures, administration)
       description: |
-        Navigation. Redirige vers Keycloak avec `acr_values` ; le callback met à jour le niveau `acr` de la session existante. Appelé par le front après un problème `reason: step-up-required`.
+        Navigation. Redirige vers Keycloak avec `acr_values` ; le callback met à jour le niveau `acr` de la session existante. Appelé par le front après un problème `reason: step-up-required`. Voie obligatoire même quand la session a été ouverte en mode `rest` : le direct grant ne délivre que `acr` = 1 (spike identity, ADR 0014 avenant) ; le front ne tente jamais un step-up par REST.
       x-required-feature: authenticated
       security:
         - sessionCookie: []
+        - adminSessionCookie: []
       parameters:
+        - $ref: '#/components/parameters/App'
         - name: acr
           in: query
           required: true
@@ -242,7 +272,13 @@ components:
       type: apiKey
       in: cookie
       name: CT_SESSION
-      description: Cookie de session BFF (HttpOnly). Les requêtes non sûres exigent aussi `X-XSRF-TOKEN`.
+      description: Cookie de session BFF du front `app` (HttpOnly). Les requêtes non sûres exigent aussi `X-XSRF-TOKEN`.
+    adminSessionCookie:
+      type: apiKey
+      in: cookie
+      name: CT_ADMIN_SESSION
+      description: |
+        Cookie de session BFF du front `admin` (HttpOnly), distinct de `CT_SESSION` pour que les deux fronts coexistent sur la même origine (profil `all`). Seul cookie lu sur `/api/admin/**`.
   parameters:
     Entity:
       name: entity
@@ -250,6 +286,12 @@ components:
       description: Code du tenant ; à défaut, résolu par le nom d'hôte.
       schema:
         type: string
+    App:
+      name: app
+      in: query
+      description: Front concerné (client BFF et cookie de session). Défaut `app`.
+      schema:
+        $ref: '#/components/schemas/AuthApp'
     CsrfHeader:
       name: X-XSRF-TOKEN
       in: header
@@ -397,12 +439,22 @@ components:
         idleTimeoutSeconds:
           type: integer
           description: Durée d'inactivité avant expiration (session glissante, rafraîchissement transparent côté BFF).
+    AuthApp:
+      type: string
+      description: |
+        Front qui ouvre la session : choisit le client confidentiel du BFF (audience `continuum-app` | `continuum-admin`) et le cookie. Sélecteur, pas une frontière : l'autorisation reste portée par le jeton (audience, `acr`, fonctionnalité) dans les `SecurityFilterChain` (§4.3.3).
+      enum:
+        - app
+        - admin
+      default: app
     LoginRequest:
       type: object
       required:
         - username
         - password
       properties:
+        app:
+          $ref: '#/components/schemas/AuthApp'
         entity:
           type: string
           description: Code du tenant (issu de `config.json`) ; à défaut, résolu par l'hôte.
