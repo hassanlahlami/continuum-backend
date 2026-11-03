@@ -16,6 +16,10 @@ public class KeycloakTokenClient {
     public record TokenResult(boolean invalidGrant, String refreshToken, JsonNode accessClaims) {
     }
 
+    /** Outcome of a refresh grant; {@code refreshToken} is the (possibly rotated) token to persist. */
+    public record RefreshResult(boolean invalidGrant, String refreshToken, String accessToken, long expiresInSeconds) {
+    }
+
     private final RestClient http;
     private final ObjectMapper mapper;
     private final String tokenUri;
@@ -45,6 +49,25 @@ public class KeycloakTokenClient {
             if (e.getStatusCode().value() == 400 || e.getStatusCode().value() == 401) {
                 // invalid_grant (wrong credentials, locked, OTP required) — indistinguishable on purpose (no enumeration)
                 return new TokenResult(true, null, null);
+            }
+            throw e;
+        }
+    }
+
+    public RefreshResult refresh(AuthBffProperties.Client client, String refreshToken) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("grant_type", "refresh_token");
+        form.add("client_id", client.clientId());
+        form.add("client_secret", client.clientSecret());
+        form.add("refresh_token", refreshToken);
+        try {
+            JsonNode body = http.post().uri(tokenUri).contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form).retrieve().body(JsonNode.class);
+            return new RefreshResult(false, body.path("refresh_token").asText(refreshToken),
+                    body.path("access_token").asText(), body.path("expires_in").asLong(60));
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 400 || e.getStatusCode().value() == 401) {
+                return new RefreshResult(true, null, null, 0);
             }
             throw e;
         }

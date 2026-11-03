@@ -38,4 +38,28 @@ public class AuthBffConfig {
     private static boolean notBlank(String s) {
         return s != null && !s.isBlank();
     }
+
+    /**
+     * Cookie-to-bearer bridge for the resource server: an explicit {@code Authorization: Bearer} header wins
+     * (service callers, tests); otherwise the {@code CT_SESSION} cookie is exchanged server-side for the session's
+     * access token (sessions are opened with the {@code app} client; admin-grade {@code acr}/audience still need step-up, ADR 0014).
+     */
+    @Bean
+    org.springframework.security.oauth2.server.resource.web.BearerTokenResolver sessionCookieBearerTokenResolver(
+            AuthBffService service) {
+        var header = new org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver();
+        return request -> {
+            String bearer = header.resolve(request);
+            if (bearer != null || request.getCookies() == null) {
+                return bearer;
+            }
+            for (jakarta.servlet.http.Cookie c : request.getCookies()) {
+                if (AuthBffProperties.SESSION_COOKIE.equals(c.getName())) {
+                    // POST /api/auth/login always opens the session with the "app" client (AuthController.APP)
+                    return service.accessToken("app", c.getValue()).orElse(null);
+                }
+            }
+            return null;
+        };
+    }
 }

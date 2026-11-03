@@ -61,14 +61,15 @@ class AuthControllerIT {
         kc = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         kc.createContext("/realms/r/protocol/openid-connect/token", ex -> {
             String form = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            boolean ok = form.contains("password=good") && form.contains("client_secret=s3cret");
+            boolean ok = (form.contains("password=good") || form.contains("refresh_token=rt-1"))
+                    && form.contains("client_secret=s3cret");
             String body;
             int code;
             if (ok) {
                 String payload = "{\"sub\":\"" + USER + "\",\"acr\":\"1\"}";
                 String jwt = "e30." + Base64.getUrlEncoder().withoutPadding()
                         .encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + ".sig";
-                body = "{\"access_token\":\"" + jwt + "\",\"refresh_token\":\"rt-1\"}";
+                body = "{\"access_token\":\"" + jwt + "\",\"refresh_token\":\"rt-1\",\"expires_in\":300}";
                 code = 200;
             } else {
                 body = "{\"error\":\"invalid_grant\"}";
@@ -200,11 +201,17 @@ class AuthControllerIT {
                 .andExpect(jsonPath("$.authenticated").value(true))
                 .andExpect(jsonPath("$.idleTimeoutSeconds").value(1800));
 
+        // cookie -> bearer bridge: a resource call carrying only CT_SESSION is authenticated (404 = past security)
+        mvc.perform(get("/api/nothing-here")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/nothing-here").cookie(session)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/nothing-here").cookie(new Cookie("CT_SESSION", "forged"))).andExpect(status().isUnauthorized());
+
         String t2 = csrf();
         mvc.perform(post("/api/auth/logout").cookie(session, new Cookie("XSRF-TOKEN", t2)).header("X-XSRF-TOKEN", t2))
                 .andExpect(status().isNoContent());
         assertThat(logoutCalled).isTrue();
         mvc.perform(get("/api/auth/session").cookie(session)).andExpect(jsonPath("$.authenticated").value(false));
+        mvc.perform(get("/api/nothing-here").cookie(session)).andExpect(status().isUnauthorized());
     }
 
     @Test

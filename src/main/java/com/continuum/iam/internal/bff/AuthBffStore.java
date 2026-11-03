@@ -81,6 +81,11 @@ public class AuthBffStore {
                 idleExpiresAt, idHash);
     }
 
+    public void updateRefreshToken(String idHash, byte[] refreshTokenEnc) {
+        jdbc.update("UPDATE platform.auth_session SET refresh_token_enc = ? WHERE id_hash = ? AND revoked_at IS NULL",
+                refreshTokenEnc, idHash);
+    }
+
     public void revoke(String idHash, OffsetDateTime now) {
         jdbc.update("UPDATE platform.auth_session SET revoked_at = ? WHERE id_hash = ? AND revoked_at IS NULL",
                 now, idHash);

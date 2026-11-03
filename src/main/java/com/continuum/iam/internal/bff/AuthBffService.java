@@ -116,8 +116,60 @@ public class AuthBffService {
         });
     }
 
+    private record CachedAccess(String token, java.time.Instant validUntil) {
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, CachedAccess> accessCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Access token to present to the resource server for a live session (ADR 0014: tokens stay server-side).
+     * Cached in memory until shortly before expiry, then renewed with the stored refresh token (rotation persisted).
+     * Empty when the session is unknown/expired or Keycloak refuses the refresh.
+     */
+    public Optional<String> accessToken(String app, String cookieValue) {
+        AuthBffProperties.Client client = props.apps().get(app);
+        if (client == null || cookieValue == null || cookieValue.isBlank()) {
+            return Optional.empty();
+        }
+        String idHash = hash(cookieValue);
+        String cacheKey = app + ":" + idHash;
+        OffsetDateTime now = now();
+        Optional<SessionRow> session = store.findLiveSession(idHash, now);
+        if (session.isEmpty()) {
+            accessCache.remove(cacheKey);
+            return Optional.empty();
+        }
+        SessionRow live = session.get();
+        store.slide(idHash, min(now.plusSeconds(intParam(live.tenantId(), "auth.session.idle_timeout_seconds")),
+                live.expiresAt()));
+        CachedAccess hit = accessCache.get(cacheKey);
+        if (hit != null && hit.validUntil().isAfter(java.time.Instant.now(clock))) {
+            return Optional.of(hit.token());
+        }
+        synchronized (idHash.intern()) {
+            hit = accessCache.get(cacheKey);
+            if (hit != null && hit.validUntil().isAfter(java.time.Instant.now(clock))) {
+                return Optional.of(hit.token());
+            }
+            SessionRow s = store.findLiveSession(idHash, now).orElse(null);
+            if (s == null) {
+                return Optional.empty();
+            }
+            KeycloakTokenClient.RefreshResult r = keycloak.refresh(client, cipher.decrypt(s.refreshTokenEnc()));
+            if (r.invalidGrant()) {
+                return Optional.empty();
+            }
+            store.updateRefreshToken(idHash, cipher.encrypt(r.refreshToken()));
+            long ttl = Math.max(0, r.expiresInSeconds() - 15);
+            accessCache.put(cacheKey, new CachedAccess(r.accessToken(), java.time.Instant.now(clock).plusSeconds(ttl)));
+            return Optional.of(r.accessToken());
+        }
+    }
+
     public void logout(String app, String cookieValue) {
         String idHash = hash(cookieValue);
+        accessCache.keySet().removeIf(k -> k.endsWith(":" + idHash));
         store.findLiveSession(idHash, now()).ifPresent(s -> {
             keycloak.logout(props.apps().get(app), cipher.decrypt(s.refreshTokenEnc()));
             store.revoke(idHash, now());
