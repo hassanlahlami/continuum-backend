@@ -2,4 +2,4 @@
 # Technique uniquement ; les secrets viennent de l'env (recette/.env.local).
 spring:
   datasource:
-    url: ${CONTINUUM_DB_URL:jdbc:postgresql://localhost:5433/continuum_migrated}
+    url: ${CONTINUUM_DB_URL:jdbc:postgresql://localhost:5433/continuum_migrated2}
