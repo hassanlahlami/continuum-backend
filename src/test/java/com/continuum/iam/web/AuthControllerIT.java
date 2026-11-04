@@ -48,6 +48,7 @@ import org.springframework.test.web.servlet.MvcResult;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
 @EnabledIfSystemProperty(named = "it.db.url", matches = "jdbc:.+")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class AuthControllerIT {
@@ -76,6 +77,15 @@ class AuthControllerIT {
             if (needsOtp && !otpOk && !form.contains("totp=")) {
                 body = "{\"error\":\"invalid_grant\",\"error_description\":\"Otp required\"}";
                 code = 401;
+            } else if (form.contains("password=wrongpwd")) {
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid user credentials\"}";
+                code = 401;
+            } else if (form.contains("password=lockedacct")) {
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Account temporarily disabled\"}";
+                code = 400;
+            } else if (form.contains("password=disabledacct")) {
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Account disabled\"}";
+                code = 400;
             } else if (form.contains("password=setup")) {
                 body = "{\"error\":\"invalid_grant\",\"error_description\":\"Account is not fully set up\"}";
                 code = 400;
@@ -311,6 +321,31 @@ class AuthControllerIT {
         mvc.perform(post("/api/auth/mfa").contentType("application/json").cookie(new Cookie("XSRF-TOKEN", t))
                 .header("X-XSRF-TOKEN", t).content("{\"challengeId\":\"" + id + "\",\"code\":\"123456\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @Order(8)
+    void everyInvalidGrantIsTheSameInvalidCredentialsAndNeverLeaksTheDescription(
+            org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        String[] passwords = {"wrongpwd", "lockedacct", "disabledacct", "plainbad"};
+        String[] leaks = {"Invalid user credentials", "temporarily disabled", "Account disabled", "error_description"};
+        String first = null;
+        for (String pwd : passwords) {
+            MvcResult r = loginAs("app", "user-" + pwd, pwd);
+            assertThat(r.getResponse().getStatus()).as(pwd).isEqualTo(401);
+            String body = r.getResponse().getContentAsString().replaceAll("\"traceId\":\"[^\"]*\"", "");
+            assertThat(com.jayway.jsonpath.JsonPath.<String>read(body, "$.reason")).isEqualTo("invalid-credentials");
+            for (String leak : leaks) {
+                assertThat(body).as(pwd + " body").doesNotContainIgnoringCase(leak);
+            }
+            if (first == null) {
+                first = body;
+            }
+            assertThat(body).as("identical body for " + pwd).isEqualTo(first);
+        }
+        for (String leak : leaks) {
+            assertThat(output.getAll()).as("logs").doesNotContainIgnoringCase(leak);
+        }
     }
 
     @Test
