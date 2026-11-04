@@ -38,7 +38,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  *       d'authentification élevé ({@code acr} ≥ 2, MFA forte) ;</li>
  *   <li>{@code /api/app/**} : jeton d'audience {@code continuum-app} ;</li>
  *   <li>{@code /internal/**} : appels service-a-service du SPI Keycloak (client credentials, {@code azp}) ;</li>
- *   <li>reste : {@code /actuator/health|info} et {@code /api/public/**} ouverts, sinon authentifié.</li>
+ *   <li>reste : {@code /actuator/health/**} (sondes liveness/readiness) et {@code /actuator/info} et {@code /api/public/**} ouverts, sinon authentifié.</li>
  * </ul>
  *
  * <p>Le filtrage réseau (n'exposer {@code /api/admin/**} que depuis le réseau d'administration) est
@@ -170,7 +170,7 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info", "/api/public/**").permitAll()
+                        .requestMatchers("/actuator/health/**", "/actuator/info", "/api/public/**").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults())
                         .authenticationEntryPoint(problem).accessDeniedHandler(problem))

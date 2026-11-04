@@ -36,6 +36,20 @@ class SecurityChainsTest {
     private JwtDecoder jwtDecoder; // requis par le resource server ; non invoqué (JWT simulé)
 
     @Test
+    void healthProbesAreOpenWithoutAuthentication() throws Exception {
+        // No actuator in this slice: "not 401" proves the matcher let the request through (404 = no handler).
+        for (String path : List.of("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness")) {
+            mvc.perform(get(path)).andExpect(status().isNotFound());
+        }
+    }
+
+    @Test
+    void otherActuatorEndpointsRequireAuthentication() throws Exception {
+        mvc.perform(get("/actuator/prometheus")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/actuator/metrics")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void corsPreflightAllowedFromLocalhost8080() throws Exception {
         mvc.perform(options("/api/app/ping").header("Origin", "http://localhost:8080")
                         .header("Access-Control-Request-Method", "GET")
