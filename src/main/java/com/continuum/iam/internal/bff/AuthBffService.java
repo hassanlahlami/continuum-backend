@@ -186,8 +186,15 @@ public class AuthBffService {
 
     /** Starts the authorization-code flow; {@code acr} (nullable) is the level asked from Keycloak. */
     public Redirect startAuthorization(String app, UUID tenantId, String returnTo, String idp, Integer acr,
-            String redirectUri) {
-        return redirect(app, tenantId, checkReturnTo(returnTo), idp, acr, redirectUri, null);
+            String redirectUri, String action) {
+        String kcAction = null;
+        if (action != null && !action.isBlank()) {
+            if (!"update-password".equals(action)) {
+                throw new BadFlowException("unknown action");
+            }
+            kcAction = "UPDATE_PASSWORD";
+        }
+        return redirect(app, tenantId, checkReturnTo(returnTo), idp, acr, redirectUri, null, kcAction);
     }
 
     /** Step-up of the live session behind {@code cookieValue}; empty when there is none for this front. */
@@ -199,11 +206,11 @@ public class AuthBffService {
         }
         String idHash = hash(cookieValue);
         return store.findLiveSession(idHash, now()).filter(s -> app.equals(s.app()))
-                .map(s -> redirect(app, s.tenantId(), rt, null, acr, redirectUri, idHash));
+                .map(s -> redirect(app, s.tenantId(), rt, null, acr, redirectUri, idHash, null));
     }
 
     private Redirect redirect(String app, UUID tenantId, String returnTo, String idp, Integer acr,
-            String redirectUri, String stepUpSession) {
+            String redirectUri, String stepUpSession, String kcAction) {
         String verifier = randomToken(32);
         String nonce = randomToken(16);
         java.util.Map<String, Object> st = new java.util.LinkedHashMap<>();
@@ -241,6 +248,9 @@ public class AuthBffService {
         }
         if (acr != null) {
             b.queryParam("acr_values", acr);
+        }
+        if (kcAction != null) {
+            b.queryParam("kc_action", kcAction);
         }
         return new Redirect(b.build().encode().toUriString(), nonce);
     }
