@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Continuum — API d'authentification (BFF)
-  version: 0.2.0
+  version: 0.3.0
   x-status: draft
   description: |
     Login « REST » via Keycloak (D41, ADR 0014). Le backend (BFF) appelle Keycloak ; les jetons restent côté serveur, le navigateur ne reçoit qu'un cookie de session `HttpOnly; Secure; SameSite=Strict`. SPA et `/api` sont servis sous la **même origine** (reverse proxy) ; un `apiBaseUrl` absolu n'est pas supporté. CSRF double-submit : cookie `XSRF-TOKEN` (lisible par le JS) + en-tête `X-XSRF-TOKEN` sur toute requête non sûre (Spring `csrf.spa()`). Le cookie est posé par `GET /session` (anonyme) ; session et jeton CSRF sont renouvelés après login. Le tenant est résolu par le nom d'hôte, ou le paramètre `entity` (corps ou requête). Le mode `redirect` est **également terminé par le BFF** (Code + PKCE confidentiel côté serveur) : le front n'a qu'un modèle, le cookie ; plus de Bearer dans le navigateur.
@@ -207,6 +207,14 @@ paths:
           description: Fournisseur d'identité d'entreprise (alias issu de `LoginOptions.ssoProviders`).
           schema:
             type: string
+        - name: action
+          in: query
+          description: |
+            Action initiée par l'application (ADR 0014 avenant c) : le BFF la traduit en `kc_action` Keycloak (`update-password` → `UPDATE_PASSWORD`). Le statut de retour de Keycloak n'est jamais utilisé pour une décision de sécurité. Valeur inconnue : 400.
+          schema:
+            type: string
+            enum:
+              - update-password
       responses:
         '302':
           description: Redirection vers Keycloak.

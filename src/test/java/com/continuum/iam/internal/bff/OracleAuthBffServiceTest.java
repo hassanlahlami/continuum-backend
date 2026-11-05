@@ -92,6 +92,17 @@ class OracleAuthBffServiceTest {
     }
 
     @Test
+    void authorizeWithUpdatePasswordAction() {
+        var r = service.startAuthorization("app", TENANT, "/", null, null, "http://x/cb", "update-password");
+        assertThat(r.location()).contains("kc_action=UPDATE_PASSWORD").contains("code_challenge_method=S256");
+        assertThat(service.startAuthorization("app", TENANT, "/", null, null, "http://x/cb", null).location())
+                .doesNotContain("kc_action");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> service.startAuthorization("app", TENANT, "/", null, null, "http://x/cb", "UPDATE_PASSWORD"))
+                .isInstanceOf(AuthBffService.BadFlowException.class);
+    }
+
+    @Test
     void loginSessionLogoutAndRateLimit() {
         assertThat(service.tenant("DEMO")).contains(TENANT);
         assertThat(service.tenant("NOPE")).isEmpty();

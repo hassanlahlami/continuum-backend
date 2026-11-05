@@ -176,7 +176,8 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
     }
 
     @Override
-    public ResponseEntity<Void> startRedirectLogin(String entity, AuthApp authApp, String returnTo, String idp) {
+    public ResponseEntity<Void> startRedirectLogin(String entity, AuthApp authApp, String returnTo, String idp,
+            String action) {
         String app = served(authApp);
         UUID tenant = service.tenant(entity).orElse(null);
         if (tenant == null) {
@@ -185,7 +186,7 @@ public class AuthController implements OptionsApi, SessionApi, LoginApi, Redirec
         // admin: the session is born at the level /api/admin/** requires (§4.3.3)
         Integer acr = "admin".equals(app) ? SecurityConfig.ADMIN_MIN_ACR : null;
         try {
-            return redirect(service.startAuthorization(app, tenant, returnTo, idp, acr, callbackUri()));
+            return redirect(service.startAuthorization(app, tenant, returnTo, idp, acr, callbackUri(), action));
         } catch (AuthBffService.BadFlowException e) {
             throw badRequest(e);
         }
