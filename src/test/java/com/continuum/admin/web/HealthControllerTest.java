@@ -43,6 +43,8 @@ class HealthControllerTest {
     @MockitoBean
     private DataSource dataSource;
     @MockitoBean
+    private com.continuum.SchemaVersionVerifier schemaVersions;
+    @MockitoBean
     private JwtDecoder jwtDecoder;
 
     @Test
@@ -51,9 +53,15 @@ class HealthControllerTest {
         var conn = org.mockito.Mockito.mock(java.sql.Connection.class);
         given(conn.isValid(2)).willReturn(true);
         given(dataSource.getConnection()).willReturn(conn);
+        given(conn.getSchema()).willReturn("public");
+        given(schemaVersions.appliedVersionIfReadable()).willReturn(java.util.OptionalLong.of(202611031000L));
 
         mvc.perform(get("/api/admin/health").with(adminJwt()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].schemaVersions[0].schemaName").value("public"))
+                .andExpect(jsonPath("$[0].schemaVersions[0].appliedVersion").value("202611031000"))
+                .andExpect(jsonPath("$[0].schemaVersions[0].expectedVersion")
+                        .value(Long.toString(com.continuum.SchemaVersionVerifier.REQUIRED_SCHEMA_VERSION)))
                 .andExpect(jsonPath("$[0].component").value("database"))
                 .andExpect(jsonPath("$[0].status").value("UP"))
                 .andExpect(jsonPath("$[0].checkedAt").exists());

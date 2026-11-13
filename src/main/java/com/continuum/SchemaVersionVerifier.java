@@ -81,6 +81,18 @@ public class SchemaVersionVerifier {
     }
 
     /**
+     * Version appliquée lisible sans lever d'exception (supervision, {@code GET /health}) ; vide si
+     * l'historique est illisible.
+     */
+    public java.util.OptionalLong appliedVersionIfReadable() {
+        try {
+            return java.util.OptionalLong.of(readAppliedVersion());
+        } catch (IllegalStateException e) {
+            return java.util.OptionalLong.empty();
+        }
+    }
+
+    /**
      * Plus grand numéro appliqué. Sur Oracle (ADR 0012) les migrations vivent dans deux historiques
      * Flyway (entité + PLATFORM) : si {@code continuum.schema.platform-history-table} est renseigné, le
      * maximum des deux est retenu.
