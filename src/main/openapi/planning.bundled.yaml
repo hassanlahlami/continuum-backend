@@ -1,0 +1,1143 @@
+openapi: 3.1.0
+info:
+  title: Continuum — Univers d'audit, évaluation des risques, plans d'audit
+  version: 0.1.0
+  x-status: draft
+  description: Pages PLA-01 à PLA-06 (plan §11.6, GIAS Std 9.4).
+servers:
+  - url: /api/app
+security:
+  - bearer: []
+tags:
+  - name: universe
+  - name: risk-assessment
+  - name: audit-plans
+paths:
+  /auditable-entities:
+    get:
+      tags:
+        - universe
+      operationId: listAuditableEntities
+      summary: Univers d'audit — entités, processus et systèmes auditables
+      x-required-feature: universe.read
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Sort'
+        - $ref: '#/components/parameters/Q'
+        - $ref: '#/components/parameters/UnitId'
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum:
+              - ORG_UNIT
+              - PROCESS
+              - SYSTEM
+              - PRODUCT
+        - name: riskLevel
+          in: query
+          schema:
+            type: string
+        - name: notAuditedSinceYears
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Entités auditables.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditableEntityPage'
+    post:
+      tags:
+        - universe
+      operationId: createAuditableEntity
+      summary: Ajouter une entité auditable
+      x-required-feature: universe.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditableEntityInput'
+      responses:
+        '201':
+          description: Créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditableEntity'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auditable-entities/{auditableEntityId}:
+    parameters:
+      - $ref: '#/components/parameters/AuditableEntityId'
+    get:
+      tags:
+        - universe
+      operationId: getAuditableEntity
+      summary: Fiche d'une entité auditable (risques, couverture, missions passées)
+      x-required-feature: universe.read
+      responses:
+        '200':
+          description: Entité.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditableEntity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - universe
+      operationId: updateAuditableEntity
+      summary: Modifier une entité auditable
+      x-required-feature: universe.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditableEntityInput'
+      responses:
+        '200':
+          description: Enregistrée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditableEntity'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /auditable-entities/{auditableEntityId}/coverage:
+    get:
+      tags:
+        - universe
+      operationId: getAuditableEntityCoverage
+      summary: Couverture pluriannuelle (missions passées et prévues)
+      x-required-feature: universe.read
+      parameters:
+        - $ref: '#/components/parameters/AuditableEntityId'
+      responses:
+        '200':
+          description: Couverture.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CoverageEntry'
+  /risk-assessments:
+    get:
+      tags:
+        - risk-assessment
+      operationId: listRiskAssessments
+      summary: Campagnes d'évaluation des risques
+      x-required-feature: risk.assessment.read
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Campagnes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessmentPage'
+    post:
+      tags:
+        - risk-assessment
+      operationId: createRiskAssessment
+      summary: Ouvrir une campagne d'évaluation des risques
+      x-required-feature: risk.assessment.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - year
+                - label
+              properties:
+                year:
+                  type: integer
+                  example: 2027
+                label:
+                  type: string
+                  example: Évaluation des risques 2027
+                auditableEntityIds:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Id'
+      responses:
+        '201':
+          description: Créée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessment'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /risk-assessments/{riskAssessmentId}:
+    parameters:
+      - $ref: '#/components/parameters/RiskAssessmentId'
+    get:
+      tags:
+        - risk-assessment
+      operationId: getRiskAssessment
+      summary: Grille de notation d'une campagne
+      x-required-feature: risk.assessment.read
+      responses:
+        '200':
+          description: Campagne et notes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - risk-assessment
+      operationId: updateRiskAssessmentScores
+      summary: Enregistrer les notes (impact, probabilité, facteurs) par entité
+      x-required-feature: risk.assessment.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - scores
+              properties:
+                version:
+                  type: integer
+                scores:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RiskScore'
+      responses:
+        '200':
+          description: Enregistré.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /risk-assessments/{riskAssessmentId}/actions/{actionCode}:
+    post:
+      tags:
+        - risk-assessment
+      operationId: performRiskAssessmentAction
+      summary: Action de workflow sur une campagne (soumettre, valider, clôturer)
+      x-required-feature: risk.assessment.manage
+      parameters:
+        - $ref: '#/components/parameters/RiskAssessmentId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Campagne à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskAssessment'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /risk-map:
+    get:
+      tags:
+        - risk-assessment
+      operationId: getRiskMap
+      summary: Cartographie des risques (heatmap impact × probabilité) consolidée
+      x-required-feature: risk.assessment.read
+      parameters:
+        - name: riskAssessmentId
+          in: query
+          schema:
+            $ref: '#/components/schemas/Id'
+        - $ref: '#/components/parameters/UnitId'
+      responses:
+        '200':
+          description: Cellules de la cartographie.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskMap'
+  /audit-plans:
+    get:
+      tags:
+        - audit-plans
+      operationId: listAuditPlans
+      summary: Plans d'audit (annuels, pluriannuels)
+      x-required-feature: plan.read
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/StatusFilter'
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Plans.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPlanPage'
+    post:
+      tags:
+        - audit-plans
+      operationId: createAuditPlan
+      summary: Créer un plan (vide ou à partir de l'évaluation des risques)
+      x-required-feature: plan.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - year
+                - label
+              properties:
+                year:
+                  type: integer
+                  example: 2027
+                label:
+                  type: string
+                  example: Plan d'audit 2027
+                fromRiskAssessmentId:
+                  $ref: '#/components/schemas/Id'
+      responses:
+        '201':
+          description: Plan créé.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPlan'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /audit-plans/{auditPlanId}:
+    parameters:
+      - $ref: '#/components/parameters/AuditPlanId'
+    get:
+      tags:
+        - audit-plans
+      operationId: getAuditPlan
+      summary: Détail d'un plan (lignes, charge, statut, actions disponibles)
+      x-required-feature: plan.read
+      responses:
+        '200':
+          description: Plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPlan'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - audit-plans
+      operationId: updateAuditPlan
+      summary: Modifier l'en-tête du plan
+      x-required-feature: plan.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+                - label
+              properties:
+                version:
+                  type: integer
+                label:
+                  type: string
+                objectives:
+                  type: string
+      responses:
+        '200':
+          description: Plan à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPlan'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /audit-plans/{auditPlanId}/items:
+    parameters:
+      - $ref: '#/components/parameters/AuditPlanId'
+    post:
+      tags:
+        - audit-plans
+      operationId: addAuditPlanItem
+      summary: Ajouter une mission prévue au plan
+      x-required-feature: plan.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditPlanItemInput'
+      responses:
+        '201':
+          description: Ligne ajoutée.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPlanItem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+  /audit-plans/{auditPlanId}/items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/AuditPlanId'
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Id'
+    put:
+      tags:
+        - audit-plans
+      operationId: updateAuditPlanItem
+      summary: Modifier une ligne du plan (période, charge, justification)
+      x-required-feature: plan.manage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditPlanItemInput'
+      responses:
+        '200':
+          description: Ligne à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPlanItem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - audit-plans
+      operationId: removeAuditPlanItem
+      summary: Retirer une ligne du plan (plan en brouillon uniquement)
+      x-required-feature: plan.manage
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /audit-plans/{auditPlanId}/capacity:
+    get:
+      tags:
+        - audit-plans
+      operationId: getAuditPlanCapacity
+      summary: Charge prévue vs capacité des équipes, par mois et par unité
+      x-required-feature: plan.read
+      parameters:
+        - $ref: '#/components/parameters/AuditPlanId'
+      responses:
+        '200':
+          description: Charge et capacité.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    month:
+                      type: string
+                      example: 2027-03
+                    unit:
+                      $ref: '#/components/schemas/UnitSummary'
+                    plannedDays:
+                      type: number
+                    capacityDays:
+                      type: number
+  /audit-plans/{auditPlanId}/actions/{actionCode}:
+    post:
+      tags:
+        - audit-plans
+      operationId: performAuditPlanAction
+      summary: Action de workflow sur le plan (soumettre, approuver → circuit de signature, réviser)
+      x-required-feature: plan.read
+      x-scope: object
+      parameters:
+        - $ref: '#/components/parameters/AuditPlanId'
+        - $ref: '#/components/parameters/ActionCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionRequest'
+      responses:
+        '200':
+          description: Plan à jour.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPlan'
+        '202':
+          description: Circuit de signature ouvert.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignatureRequestRef'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    AuditableEntityId:
+      name: auditableEntityId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    RiskAssessmentId:
+      name: riskAssessmentId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    AuditPlanId:
+      name: auditPlanId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Id'
+    Page:
+      name: page
+      in: query
+      description: Numéro de page (commence à 0).
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      description: Taille de page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+    Sort:
+      name: sort
+      in: query
+      description: 'Tri : champ,asc|desc — répétable.'
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          example: updatedAt,desc
+    Q:
+      name: q
+      in: query
+      description: Recherche libre.
+      schema:
+        type: string
+        maxLength: 200
+    UnitId:
+      name: unitId
+      in: query
+      description: Filtre sur une unité organisationnelle (et ses sous-unités si la portée le permet).
+      schema:
+        $ref: '#/components/schemas/Id'
+    ActionCode:
+      name: actionCode
+      in: path
+      required: true
+      description: Code d'une action disponible (voir availableActions).
+      schema:
+        type: string
+        pattern: ^[a-z][a-z0-9-]*$
+        example: submit-for-review
+    StatusFilter:
+      name: status
+      in: query
+      description: Codes de statut (répétable).
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+  schemas:
+    AuditableEntityInput:
+      type: object
+      required:
+        - label
+        - kind
+      properties:
+        version:
+          type: integer
+        code:
+          type: string
+          example: AGENCE-A001
+        label:
+          type: string
+          example: Agence A001 — Casablanca Centre
+        kind:
+          type: string
+          enum:
+            - ORG_UNIT
+            - PROCESS
+            - SYSTEM
+            - PRODUCT
+        unitId:
+          $ref: '#/components/schemas/Id'
+        ownerUserId:
+          $ref: '#/components/schemas/Id'
+        riskFamilyCodes:
+          type: array
+          items:
+            type: string
+        regulatoryRequirement:
+          type: string
+          description: Obligation réglementaire de couverture (ex. inspection annuelle)
+    AuditableEntity:
+      allOf:
+        - $ref: '#/components/schemas/AuditableEntityInput'
+        - type: object
+          required:
+            - id
+            - meta
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            unit:
+              $ref: '#/components/schemas/UnitSummary'
+            currentRiskLevel:
+              $ref: '#/components/schemas/Ref'
+            lastAuditedOn:
+              type: string
+              format: date
+            nextPlannedAuditYear:
+              type: integer
+            openRecommendations:
+              type: integer
+            meta:
+              $ref: '#/components/schemas/AuditMeta'
+    AuditableEntityPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditableEntity'
+    CoverageEntry:
+      type: object
+      required:
+        - year
+      properties:
+        year:
+          type: integer
+        missionId:
+          $ref: '#/components/schemas/Id'
+        missionLabel:
+          type: string
+        status:
+          $ref: '#/components/schemas/Ref'
+        planned:
+          type: boolean
+    RiskScore:
+      type: object
+      required:
+        - auditableEntityId
+        - impact
+        - likelihood
+      properties:
+        auditableEntityId:
+          $ref: '#/components/schemas/Id'
+        impact:
+          type: integer
+          minimum: 1
+          maximum: 5
+        likelihood:
+          type: integer
+          minimum: 1
+          maximum: 5
+        factors:
+          type: object
+          description: Facteurs complémentaires paramétrables (ex. changements récents, incidents).
+          additionalProperties:
+            type: number
+        rationale:
+          type: string
+    RiskAssessment:
+      type: object
+      required:
+        - id
+        - year
+        - label
+        - status
+        - meta
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        year:
+          type: integer
+        label:
+          type: string
+        status:
+          $ref: '#/components/schemas/Ref'
+        scores:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/RiskScore'
+              - type: object
+                properties:
+                  auditableEntityLabel:
+                    type: string
+                  resultingLevel:
+                    $ref: '#/components/schemas/Ref'
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+        meta:
+          $ref: '#/components/schemas/AuditMeta'
+    RiskAssessmentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/RiskAssessment'
+    RiskMap:
+      type: object
+      required:
+        - cells
+      properties:
+        impactScale:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ref'
+        likelihoodScale:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ref'
+        cells:
+          type: array
+          items:
+            type: object
+            required:
+              - impact
+              - likelihood
+              - count
+            properties:
+              impact:
+                type: integer
+              likelihood:
+                type: integer
+              count:
+                type: integer
+              level:
+                $ref: '#/components/schemas/Ref'
+              auditableEntityIds:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Id'
+    AuditPlanItemInput:
+      type: object
+      required:
+        - auditableEntityId
+        - missionTypeCode
+        - plannedQuarter
+      properties:
+        version:
+          type: integer
+        auditableEntityId:
+          $ref: '#/components/schemas/Id'
+        missionTypeCode:
+          type: string
+          example: INSPECTION
+        plannedQuarter:
+          type: string
+          pattern: ^\d{4}-Q[1-4]$
+          example: 2027-Q2
+        estimatedDays:
+          type: number
+          minimum: 0
+          example: 25
+        leadUnitId:
+          $ref: '#/components/schemas/Id'
+        justification:
+          type: string
+          example: Risque élevé ; non auditée depuis 2023
+    AuditPlanItem:
+      allOf:
+        - $ref: '#/components/schemas/AuditPlanItemInput'
+        - type: object
+          required:
+            - id
+          properties:
+            id:
+              $ref: '#/components/schemas/Id'
+            auditableEntityLabel:
+              type: string
+            riskLevel:
+              $ref: '#/components/schemas/Ref'
+            missionId:
+              $ref: '#/components/schemas/Id'
+              description: Mission lancée à partir de cette ligne
+    AuditPlan:
+      type: object
+      required:
+        - id
+        - year
+        - label
+        - status
+        - meta
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        year:
+          type: integer
+        label:
+          type: string
+        objectives:
+          type: string
+        status:
+          $ref: '#/components/schemas/Ref'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditPlanItem'
+        totalEstimatedDays:
+          type: number
+        approvedAt:
+          type: string
+          format: date-time
+        signatureRequestId:
+          $ref: '#/components/schemas/Id'
+        availableActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailableAction'
+        meta:
+          $ref: '#/components/schemas/AuditMeta'
+    AuditPlanPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required:
+            - items
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditPlan'
+    Id:
+      type: string
+      format: uuid
+      example: 3f6c2a1e-8b7d-4c21-9a55-0e2f4b6d8c10
+    PageMeta:
+      type: object
+      required:
+        - page
+        - size
+        - totalItems
+        - totalPages
+      properties:
+        page:
+          type: integer
+          minimum: 0
+          example: 0
+        size:
+          type: integer
+          minimum: 1
+          example: 25
+        totalItems:
+          type: integer
+          minimum: 0
+          example: 42
+        totalPages:
+          type: integer
+          minimum: 0
+          example: 2
+    UnitSummary:
+      type: object
+      required:
+        - id
+        - label
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        code:
+          type: string
+          example: DIR-RESEAU
+        label:
+          type: string
+          example: Direction du Réseau
+        typeLabel:
+          type: string
+          example: Direction
+    Ref:
+      type: object
+      description: Valeur d'un référentiel paramétrable par tenant (statut, criticité, type…).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: HIGH
+        label:
+          type: string
+          description: Libellé dans la langue de l'utilisateur
+          example: Élevée
+        color:
+          type: string
+          description: Token de couleur sémantique (§1.6), jamais une couleur en dur
+          example: criticality-high
+    UserSummary:
+      type: object
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          $ref: '#/components/schemas/Id'
+        displayName:
+          type: string
+          example: Inspecteur Un
+        positionLabel:
+          type: string
+          description: Position principale courante (libellé du tenant)
+          example: Inspecteur
+        unitLabel:
+          type: string
+          example: Département Inspection du Réseau
+    AuditMeta:
+      type: object
+      required:
+        - createdAt
+        - version
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          $ref: '#/components/schemas/UserSummary'
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          $ref: '#/components/schemas/UserSummary'
+        version:
+          type: integer
+          minimum: 0
+          description: Version pour l'écriture concurrente (409 si périmée)
+          example: 3
+    Problem:
+      type: object
+      description: Erreur RFC 9457 enrichie (contracts/README.md §6).
+      required:
+        - title
+        - status
+        - traceId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          pattern: ^CTN-[A-Z]+-\d{4}$
+          description: Code d'événement (§10.4)
+        traceId:
+          type: string
+          description: Référence d'erreur affichée à l'utilisateur (§10.8)
+        sodRule:
+          type: string
+          description: Règle SoD en cause (403 uniquement)
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - code
+              - message
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+    AvailableAction:
+      type: object
+      description: Action que l'utilisateur courant peut exécuter sur l'objet (calculée par le serveur).
+      required:
+        - code
+        - label
+      properties:
+        code:
+          type: string
+          example: submit-for-review
+        label:
+          type: string
+          example: Soumettre à la revue
+        style:
+          type: string
+          enum:
+            - primary
+            - secondary
+            - danger
+          default: secondary
+        requiresComment:
+          type: boolean
+          default: false
+        requiresSignature:
+          type: boolean
+          default: false
+        requiresStepUp:
+          type: boolean
+          default: false
+          description: Authentification renforcée (acr=2) exigée
+        confirmationMessage:
+          type: string
+          description: Message de confirmation à afficher avant exécution
+    ActionRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        comment:
+          type: string
+          maxLength: 4000
+        payload:
+          type: object
+          additionalProperties: true
+          description: Données propres à l'action (ex. motif de refus, destinataires).
+    SignatureRequestRef:
+      type: object
+      description: Renvoyé en 202 quand une action ouvre un circuit de signature (§2.4).
+      required:
+        - signatureRequestId
+        - status
+      properties:
+        signatureRequestId:
+          $ref: '#/components/schemas/Id'
+        status:
+          type: string
+          enum:
+            - PENDING
+            - COMPLETED
+            - REFUSED
+            - INVALIDATED
+            - EXPIRED
+        nextSigners:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+  responses:
+    Forbidden:
+      description: Fonctionnalité non détenue sur cette portée, ou refus de séparation des tâches (code CTN-IAM-0210).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/sod-violation
+            title: Séparation des tâches
+            status: 403
+            detail: Vous avez rédigé ce constat ; sa validation doit être faite par une autre personne.
+            code: CTN-IAM-0210
+            traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+            sodRule: NOT_CREATOR
+    ValidationFailed:
+      description: Données invalides — détail par champ dans errors[].
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://continuum.local/problems/validation
+            title: Données invalides
+            status: 422
+            code: CTN-AUD-0422
+            traceId: 7a1c2e9f0b3d4c5e8f9a0b1c2d3e4f50
+            errors:
+              - field: plannedEnd
+                code: date.before-start
+                message: La date de fin doit être postérieure à la date de début.
+    NotFound:
+      description: Ressource introuvable (ou hors de votre périmètre).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: Conflit de version (l'objet a changé) ou état incompatible avec l'action.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NoContent:
+      description: Opération réussie, sans contenu.
