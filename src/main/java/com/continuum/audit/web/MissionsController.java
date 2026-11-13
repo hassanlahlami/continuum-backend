@@ -1,10 +1,17 @@
 package com.continuum.audit.web;
 
 import com.continuum.audit.api.MissionDirectory;
+import com.continuum.audit.api.MissionPlanningService;
+import com.continuum.audit.api.MissionPlanningService.CreateMissionCommand;
+import com.continuum.audit.api.MissionPlanningService.CreatedMission;
+import com.continuum.audit.api.MissionPlanningService.TeamMemberCommand;
 import com.continuum.audit.api.MissionView;
 import gen.app.missions.api.MissionsApi;
 import gen.app.missions.model.AuditMeta;
 import gen.app.missions.model.Mission;
+import gen.app.missions.model.MissionAuditedEntitiesInner;
+import gen.app.missions.model.MissionCreate;
+import gen.app.missions.model.MissionType;
 import gen.app.missions.model.MissionPage;
 import gen.app.missions.model.Ref;
 import gen.app.missions.model.UnitSummary;
@@ -33,8 +40,10 @@ public class MissionsController implements MissionsApi {
     private static final String CLAIM_USER = "continuum_user_id";
 
     private final MissionDirectory missions;
+    private final MissionPlanningService planning;
 
-    public MissionsController(MissionDirectory missions) {
+    public MissionsController(MissionDirectory missions, MissionPlanningService planning) {
+        this.planning = planning;
         this.missions = missions;
     }
 
@@ -63,6 +72,35 @@ public class MissionsController implements MissionsApi {
                 .map(MissionsController::toModel)
                 .map(ResponseEntity::ok)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Mission inconnue"));
+    }
+
+    @Override
+    public ResponseEntity<List<MissionType>> listActiveMissionTypes() {
+        Jwt jwt = currentJwt();
+        List<MissionType> types = UniverseController.guard(() -> planning
+                .activeMissionTypes(uuidClaim(jwt, CLAIM_TENANT), uuidClaim(jwt, CLAIM_USER))).stream()
+                .map(t -> new MissionType(t.code(), t.label()).processKey(t.processKey())
+                        .defaultDurationDays(t.defaultDurationDays()))
+                .toList();
+        return ResponseEntity.ok(types);
+    }
+
+    /** Dernière étape de l'assistant MIS-02 : droit {@code mission.create} sur l'unité, références validées (422). */
+    @Override
+    public ResponseEntity<Mission> createMission(MissionCreate in) {
+        Jwt jwt = currentJwt();
+        List<TeamMemberCommand> team = in.getTeam() == null ? List.of() : in.getTeam().stream()
+                .map(m -> new TeamMemberCommand(m.getUserId(), m.getMissionRoleCode(), m.getValidFrom(),
+                        m.getValidTo()))
+                .toList();
+        CreatedMission created = UniverseController.guard(() -> planning.createMission(new CreateMissionCommand(
+                uuidClaim(jwt, CLAIM_TENANT), uuidClaim(jwt, CLAIM_USER), in.getTitle(), in.getMissionTypeCode(),
+                in.getUnitId(), in.getAuditPlanItemId(), in.getAuditedEntityIds(), in.getScope(),
+                in.getPlannedStart(), in.getPlannedEnd(), in.getBudgetDays(), team)));
+        Mission body = toModel(created.mission()).scope(created.scope());
+        created.auditedEntities().forEach(e -> body.addAuditedEntitiesItem(
+                new MissionAuditedEntitiesInner().id(e.id()).label(e.label())));
+        return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
     private static Mission toModel(MissionView v) {

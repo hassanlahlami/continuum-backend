@@ -187,6 +187,32 @@
             </configuration>
           </execution>
           <execution>
+            <id>generate-app-planning</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <!-- Spec bundlée (redocly) : source = Instructions/contracts/openapi/app/planning.yaml.
+                   Régénérer via `npx @redocly/cli bundle app/planning.yaml -o …/src/main/openapi/planning.bundled.yaml`. -->
+              <inputSpec>src/main/openapi/planning.bundled.yaml</inputSpec>
+              <generatorName>spring</generatorName>
+              <library>spring-boot</library>
+              <apiPackage>gen.app.planning.api</apiPackage>
+              <modelPackage>gen.app.planning.model</modelPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <interfaceOnly>true</interfaceOnly>
+                <useSpringBoot3>true</useSpringBoot3>
+                <useTags>true</useTags>
+                <documentationProvider>none</documentationProvider>
+                <openApiNullable>false</openApiNullable>
+                <useJakartaEe>true</useJakartaEe>
+                <skipDefaultInterface>false</skipDefaultInterface>
+              </configOptions>
+            </configuration>
+          </execution>
+          <execution>
             <id>generate-public</id>
             <goals><goal>generate</goal></goals>
             <configuration>

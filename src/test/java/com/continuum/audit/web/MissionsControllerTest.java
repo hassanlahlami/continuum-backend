@@ -70,7 +70,7 @@ class MissionsControllerTest {
         run(new FileSystemResource(pg.resolve("V202610091200__entity_mission.sql")));
         run(new ClassPathResource("mission-read-seed.sql"));
 
-        controller = new MissionsController(new JdbcMissionDirectory(dataSource));
+        controller = new MissionsController(new JdbcMissionDirectory(dataSource), null);
     }
 
     private static void run(Resource script) {
