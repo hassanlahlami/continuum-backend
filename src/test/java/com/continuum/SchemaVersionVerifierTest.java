@@ -1,5 +1,6 @@
 package com.continuum;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -48,6 +49,17 @@ class SchemaVersionVerifierTest {
 
     private SchemaVersionVerifier verifier(boolean enabled) {
         return new SchemaVersionVerifier(dataSource, TABLE, "", enabled);
+    }
+
+    @Test
+    void appliedVersionIfReadableReturnsMaxOrEmpty() {
+        insert(1, "202609300900", true);
+        insert(2, "202611031000", true);
+        insert(3, "209911010000", false); // failed: ignored
+        assertThat(verifier(true).appliedVersionIfReadable()).hasValue(202611031000L);
+
+        jdbc.execute("DROP TABLE " + TABLE);
+        assertThat(verifier(true).appliedVersionIfReadable()).isEmpty();
     }
 
     @Test

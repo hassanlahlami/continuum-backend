@@ -1,5 +1,6 @@
 package com.continuum;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -69,6 +70,17 @@ class OracleSchemaVersionVerifierTest {
 
     private static String required() {
         return String.valueOf(SchemaVersionVerifier.REQUIRED_SCHEMA_VERSION);
+    }
+
+    @Test
+    void appliedVersionIfReadableReturnsMaxOrEmpty() {
+        insert(TABLE, 1, "202609300900", true);
+        insert(TABLE, 2, "202611031000", true);
+        insert(TABLE, 3, "209911010000", false); // failed: ignored
+        assertThat(verifier("", true).appliedVersionIfReadable()).hasValue(202611031000L);
+
+        jdbc.execute("DROP TABLE " + TABLE);
+        assertThat(verifier("", true).appliedVersionIfReadable()).isEmpty();
     }
 
     @Test
