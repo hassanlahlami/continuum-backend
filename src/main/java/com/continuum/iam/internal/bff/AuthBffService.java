@@ -100,6 +100,9 @@ public class AuthBffService {
         return "admin".equals(app) ? "redirect" : store.param(tenantId, "auth.login.mode").orElse("redirect");
     }
 
+    /** Fixed error_description emitted by the Keycloak otp-hint authenticator (lower-cased for comparison). */
+    static final String OTP_REQUIRED_MARKER = "continuum:otp_required";
+
     public LoginOutcome login(String app, UUID tenantId, String username, String password, String ip) {
         OffsetDateTime now = now();
         String idKey = hash(tenantId + ":" + username.toLowerCase());
@@ -115,7 +118,7 @@ public class AuthBffService {
             if (d.contains("not fully set up")) {
                 return new LoginOutcome.ActionRequired();
             }
-            if (d.contains("otp")) {
+            if (d.equals(OTP_REQUIRED_MARKER)) { // exact marker emitted by the Keycloak SPI (ADR 0014 d), never a substring
                 String id = randomToken(16);
                 purgeChallenges(now);
                 challenges.put(id, new Challenge(app, tenantId, username, password, idKey,

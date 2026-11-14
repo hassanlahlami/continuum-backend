@@ -75,7 +75,10 @@ class AuthControllerIT {
             String body;
             int code;
             if (needsOtp && !otpOk && !form.contains("totp=")) {
-                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Otp required\"}";
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"continuum:otp_required\"}";
+                code = 401;
+            } else if (form.contains("password=otpish")) {
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid otp code\"}";
                 code = 401;
             } else if (form.contains("password=wrongpwd")) {
                 body = "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid user credentials\"}";
@@ -84,6 +87,9 @@ class AuthControllerIT {
                 body = "{\"error\":\"invalid_grant\",\"error_description\":\"Account temporarily disabled\"}";
                 code = 400;
             } else if (form.contains("password=disabledacct")) {
+                body = "{\"error\":\"invalid_grant\",\"error_description\":\"Account disabled\"}";
+                code = 400;
+            } else if (form.contains("password=disabledwrongpwd")) {
                 body = "{\"error\":\"invalid_grant\",\"error_description\":\"Account disabled\"}";
                 code = 400;
             } else if (form.contains("password=setup")) {
@@ -327,8 +333,8 @@ class AuthControllerIT {
     @Order(8)
     void everyInvalidGrantIsTheSameInvalidCredentialsAndNeverLeaksTheDescription(
             org.springframework.boot.test.system.CapturedOutput output) throws Exception {
-        String[] passwords = {"wrongpwd", "lockedacct", "disabledacct", "plainbad"};
-        String[] leaks = {"Invalid user credentials", "temporarily disabled", "Account disabled", "error_description"};
+        String[] passwords = {"wrongpwd", "lockedacct", "disabledacct", "disabledwrongpwd", "otpish", "plainbad"};
+        String[] leaks = {"Invalid user credentials", "temporarily disabled", "Account disabled", "Invalid otp", "continuum:otp", "error_description"};
         String first = null;
         for (String pwd : passwords) {
             MvcResult r = loginAs("app", "user-" + pwd, pwd);
