@@ -441,4 +441,16 @@ class AuthControllerIT {
         assertThat(second.getResponse().getContentAsString()).contains("rate-limited");
         assertThat(login(t, "good").getResponse().getStatus()).isEqualTo(429);
     }
+
+    /** ADR 0014 (d): Keycloak already counts the missing-OTP refusal; the BFF must not feed its own counter with it. */
+    @Test
+    @Order(10)
+    void mfaRequiredIsNeverCountedAsAnIdentifierOrIpFailure() throws Exception {
+        // identifier max_attempts is 2 here (test above): counting MFA_REQUIRED would block from the 2nd attempt
+        for (int i = 0; i < 5; i++) {
+            MvcResult r = loginAs("app", "frank", "needotp");
+            assertThat(r.getResponse().getStatus()).isEqualTo(200);
+            assertThat(r.getResponse().getContentAsString()).contains("MFA_REQUIRED");
+        }
+    }
 }
