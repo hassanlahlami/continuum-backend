@@ -1,86 +1,110 @@
-# continuum-backend
+# Continuum: backend
 
-API partagée de Continuum — **monolithe modulaire Spring Boot** (Spring Modulith, Java 21). Une seule
-application sert les deux fronts (Plateforme Fonctionnelle et Admin Système) ; la séparation passe par
-la **sécurité** (audiences `continuum-app` / `continuum-admin`), pas par la duplication du code (§4.3.3).
+**An internal-audit and continuous-controls platform for banks, built as a modular Spring Boot monolith.**
 
-## Modules (Spring Modulith)
+Continuum gives a bank's audit and risk teams one place to run audit work, track controls and keep a
+trustworthy record of who did what. One Java 21 application serves both front-ends (the functional
+platform and the system-admin console). The separation is enforced by security (token audiences
+`continuum-app` and `continuum-admin`), not by duplicating code.
 
-`iam` (autorisation `can()`, catalogue de fonctionnalités, SoD), `audittrail` (journal chaîné + signé
-HMAC), `tenancy`, `ccm` (contrôle continu), `admin`, `audit`, `connectors` (CBS), `workflow`,
-`signature`, `notification`, `reporting`, `aigateway` (post-MVP). Les frontières sont vérifiées par
-`ModularityTests` (ArchUnit) : un module n'accède qu'à l'API publique (`*.api`) ou aux événements d'un
-autre, jamais à ses entités ni repositories.
+## What it does
 
-## Prérequis
+- **Fine-grained authorization**: a feature catalogue, a central `can()` decision point and
+  segregation-of-duties rules (`iam`), applied with `@PreAuthorize` on every method.
+- **Tamper-evident audit trail**: a hash-chained journal signed with an HMAC key kept in a secrets
+  vault (`audittrail`).
+- **Multi-tenancy**: each bank (tenant) configures its own business rules in the database, with no
+  redeployment (`tenancy`).
+- **Continuous controls monitoring** (`ccm`), **workflows** (`workflow`), **e-signature** (`signature`),
+  **notifications**, **reporting**, and a **core-banking connector layer** (`connectors`).
+- **PostgreSQL or Oracle** from the same code base, with a dedicated Oracle parity test suite.
+- **Standards-based sign-in**: OIDC with Keycloak, MFA-aware (`acr >= 2` required on admin APIs), plus an
+  authentication BFF that keeps refresh tokens server-side.
 
-Java 21, Maven 3.9. Base **PostgreSQL** ou **Oracle** (D4). Migrations appliquées par le
-`continuum-migrator` (jamais par le backend, D33).
+## Engineering choices worth a look
 
-## Construire & tester
+- **Architecture rules are tested.** Spring Modulith modules may only talk through their public `*.api`
+  package or through events. `ModularityTests` (ArchUnit) fails the build if a module reaches into
+  another module's entities or repositories.
+- **Fail-closed start-up.** The backend checks the database schema at start-up and refuses to run on a
+  missing, drifted or outdated schema (`CTN-DB-0001`, `CTN-DB-0002`, `CTN-DB-0003`).
+- **Migrations are separate.** Schema changes are applied by
+  [`continuum-migrator`](https://github.com/hassanlahlami/continuum-migrator), never by the running
+  backend.
+- **Deployment surfaces.** The same jar can run as `app`, `admin`, `worker` (scheduled controls only) or
+  `all`, so a replicated API never duplicates background jobs.
+- **Operations built in.** RFC 9457 problem+json errors with a trace id, structured JSON logs, graceful
+  shutdown, container health probes and a Prometheus endpoint.
+
+## Modules
+
+`iam`, `audittrail`, `tenancy`, `ccm`, `admin`, `audit`, `connectors`, `workflow`, `signature`,
+`notification`, `reporting`, `aigateway` (post-MVP).
+
+## Related repositories
+
+| Repository | Role |
+| --- | --- |
+| [continuum-migrator](https://github.com/hassanlahlami/continuum-migrator) | Database migrations (PostgreSQL / Oracle) |
+| [continuum-auth](https://github.com/hassanlahlami/continuum-auth) | Authentication service |
+| [continuum-keycloak-spi](https://github.com/hassanlahlami/continuum-keycloak-spi) | Keycloak extension |
+| [continuum-app-web](https://github.com/hassanlahlami/continuum-app-web) | Functional front-end (TypeScript) |
+| [continuum-admin-web](https://github.com/hassanlahlami/continuum-admin-web) | Admin front-end (TypeScript) |
+
+## Build and test
+
+Requires Java 21 and Maven 3.9.
 
 ```bash
-mvn -o verify                      # build + tests unitaires (sans base)
-# Tests d'intégration sur base réelle (sinon neutralisés par @Assumptions / @EnabledIfSystemProperty) :
-mvn -o surefire:test -Dtest=<Classe> \
-  -Dit.db.url=jdbc:postgresql://localhost:5432/<db> -Dit.db.user=<u> -Dit.db.password=<p>
-# Parité Oracle (tests dédiés) : -Dit.oracle.url=jdbc:oracle:thin:@host:1521/FREEPDB1 -Dit.oracle.user=… -Dit.oracle.password=…
+mvn -o verify          # build + unit tests (no database needed)
+
+# Integration tests against a real database (skipped otherwise):
+mvn -o surefire:test -Dtest=<TestClass> \
+  -Dit.db.url=jdbc:postgresql://localhost:5432/<db> -Dit.db.user=<user> -Dit.db.password=<password>
+
+# Oracle parity tests:
+#   -Dit.oracle.url=jdbc:oracle:thin:@host:1521/FREEPDB1 -Dit.oracle.user=... -Dit.oracle.password=...
 ```
 
-> Sur poste à mémoire contrainte, lancer les tests Oracle **seuls** et séparément des tests de contexte
-> Spring (`ApplicationBootTest`) — voir `Instructions/docs/suivi/ETAT.md` (Points d'attention).
+Run the Oracle tests on their own, apart from the Spring context tests, on machines with limited memory.
 
-## Lancer
+## Run
 
-Le migrateur doit avoir migré la base **avant** le backend (garde-fous de démarrage, ci-dessous).
+Run the migrator first; the backend refuses to start on an unmigrated database.
 
 ```bash
 CONTINUUM_DB_URL=jdbc:postgresql://localhost:5432/continuum \
-CONTINUUM_DB_USER=… CONTINUUM_DB_PASSWORD=… \
+CONTINUUM_DB_USER=... CONTINUUM_DB_PASSWORD=... \
 CONTINUUM_OIDC_ISSUER_URI=http://localhost:8180/realms/banque-demo \
-CONTINUUM_AUDITTRAIL_HMAC_KEY=… \
+CONTINUUM_AUDITTRAIL_HMAC_KEY=... \
 mvn -o spring-boot:run
 ```
 
-Pour une pile locale complète (simulation + migrateur + backend + fronts), utiliser `../run.ps1 -Mode full`.
+## Configuration
 
-## Configuration (properties / env)
+Only technical settings live in properties and environment variables; business settings live in the
+database, per tenant. Secrets come from a vault and are never committed.
 
-Paramètres **techniques** seulement (le métier se paramètre en base, par tenant — voir `Instructions/CLAUDE.md`) :
-`CONTINUUM_DB_URL/USER/PASSWORD`, `CONTINUUM_DB_DIALECT` (`postgresql`|`oracle`), `CONTINUUM_OIDC_ISSUER_URI`,
-`CONTINUUM_AUDITTRAIL_HMAC_KEY` (depuis Vault, obligatoire), `CONTINUUM_SURFACE`
-(`all`|`app`|`admin`|`worker`). Détail : `src/main/resources/application.yml` et
-`Instructions/docs/exploitation/DEPLOIEMENT.md`.
+| Variable | Purpose |
+| --- | --- |
+| `CONTINUUM_DB_URL`, `CONTINUUM_DB_USER`, `CONTINUUM_DB_PASSWORD` | Database connection |
+| `CONTINUUM_DB_DIALECT` | `postgresql` or `oracle` |
+| `CONTINUUM_OIDC_ISSUER_URI` | Keycloak realm issuer |
+| `CONTINUUM_AUDITTRAIL_HMAC_KEY` | Audit-trail signing key (required) |
+| `CONTINUUM_SURFACE` | `all`, `app`, `admin` or `worker` |
+| `CONTINUUM_CORS_ALLOWED_ORIGINS` | Comma-separated front-end origins (set explicitly in production) |
+| `CONTINUUM_DIRECTORY_SYNC_ENABLED` | Scheduled directory sync from Keycloak user storage (off by default) |
 
-**CORS** : `CONTINUUM_CORS_ALLOWED_ORIGINS` (liste séparée par des virgules, propriété `continuum.cors.allowed-origins`) ;
-défaut dev `http://localhost:8080,http://localhost:4201,http://localhost:4202` — à fixer explicitement en prod.
+Details are in `src/main/resources/application.yml`.
 
-**Synchronisation annuaire** (job planifié, désactivé par défaut) : `CONTINUUM_DIRECTORY_SYNC_ENABLED=true`,
-`CONTINUUM_DIRECTORY_SYNC_SOURCE` (nom du composant LDAP Keycloak, sim : `ad-banque`),
-`CONTINUUM_DIRECTORY_SYNC_CLIENT_ID` (`continuum-directory-sync`), `CONTINUUM_DIRECTORY_SYNC_CLIENT_SECRET`
-(même valeur que `KC_DIRECTORY_SYNC_SECRET` côté Keycloak, via Vault), `CONTINUUM_KC_ADMIN_BASE_URL`
-(ex. `http://localhost:8180`), optionnels `CONTINUUM_DIRECTORY_SYNC_INTERVAL` (`PT1H`) et
-`CONTINUUM_DIRECTORY_SYNC_INITIAL_DELAY` (`PT1M`). État dans `platform.directory_sync_state`.
+## Security model
 
-## Surface de déploiement (`CONTINUUM_SURFACE`)
+Two filter chains: `/api/admin/**` (audience `continuum-admin`, `acr >= 2`) and `/api/app/**` (audience
+`continuum-app`), plus a default chain for actuator and public endpoints. Method-level checks of the form
+`@PreAuthorize("@authz.can(...)")` sit on top.
 
-Même jar, rôles différents (`DeploymentSurface`) : `app` (API Fonctionnelle), `admin` (API Admin),
-`worker` (planification continue CCM uniquement), `all` (tout-en-un, défaut). Le gate `worker` évite
-qu'une API répliquée duplique les travaux de fond.
+---
 
-## Garde-fous de démarrage (fail-closed)
-
-Le backend **vérifie** la base au démarrage (`ApplicationReadyEvent`) et refuse de démarrer sinon :
-`CTN-DB-0001` (schéma absent), `CTN-DB-0002` (catalogue de fonctionnalités en dérive),
-`CTN-DB-0003` (schéma plus ancien que `REQUIRED_SCHEMA_VERSION`). ⇒ toujours exécuter le migrateur avant.
-
-## Sécurité
-
-Deux chaînes (`SecurityConfig`) : `/api/admin/**` (audience `continuum-admin` + `acr ≥ 2`) et
-`/api/app/**` (audience `continuum-app`), plus une chaîne par défaut (actuator/public ouverts).
-Sécurité de méthode `@PreAuthorize("@authz.can(...)")` par-dessus (§2.1.7).
-
-## Références
-
-Contrats OpenAPI : `../Instructions/contracts/`. Plan : `../Instructions/plan-plateforme-audit-interne-erp.md`
-(§4.3). Suivi : `../Instructions/docs/suivi/`.
+**Built by Hassan Lahlami**, Java / Spring Boot backend and FinTech API integration engineer. Open to
+freelance work on banking integrations, payment APIs and secure Spring backends:
+[Upwork profile](https://www.upwork.com/freelancers/~015cce5800215d394a).
